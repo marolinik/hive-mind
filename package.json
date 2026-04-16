@@ -1,0 +1,16 @@
+{
+  "name": "hive-mind",
+  "version": "0.1.0",
+  "description": "Local-first AI memory system with semantic search, knowledge graph, wiki compiler, and MCP server. Compatible with Claude Code, Codex, Hermes, and any MCP client.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "vitest run",
+    "clean": "rm -rf packages/*/dist"
+  },
+  "repository": { "type": "git", "url": "https://github.com/egzakta/hive-mind" },
+  "keywords": ["memory", "ai", "mcp", "knowledge-graph", "wiki", "local-first", "semantic-search"]
+}

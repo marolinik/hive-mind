@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hive Mind — Architecture Visual</title>
+<style>
+  :root {
+    --honey: #e5a000;
+    --honey-light: #f5c542;
+    --honey-dim: #b37d00;
+    --hive-950: #08090c;
+    --hive-900: #0e1017;
+    --hive-800: #161922;
+    --hive-700: #1e222f;
+    --hive-600: #2a2f40;
+    --hive-500: #3d4358;
+    --accent: #a78bfa;
+    --accent-dim: #7c5cbf;
+    --text: #e8e6e3;
+    --text-dim: #9a9690;
+    --text-muted: #6b6762;
+    --green: #34d399;
+    --blue: #60a5fa;
+    --rose: #fb7185;
+    --orange: #fb923c;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--hive-950);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ─── Header ──────────────────────────────────────────────── */
+  .header {
+    text-align: center;
+    padding: 48px 24px 32px;
+    position: relative;
+  }
+
+  .header h1 {
+    font-size: 2.4rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+
+  .header h1 .hive { color: var(--honey); }
+  .header h1 .mind { color: var(--text); }
+
+  .header .tagline {
+    font-size: 1.05rem;
+    color: var(--text-dim);
+    max-width: 600px;
+    margin: 0 auto 20px;
+  }
+
+  .badges {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .badge--honey { background: rgba(229,160,0,0.15); color: var(--honey); border: 1px solid rgba(229,160,0,0.3); }
+  .badge--accent { background: rgba(167,139,250,0.12); color: var(--accent); border: 1px solid rgba(167,139,250,0.25); }
+  .badge--green { background: rgba(52,211,153,0.12); color: var(--green); border: 1px solid rgba(52,211,153,0.25); }
+
+  /* ─── Differentiators ─────────────────────────────────────── */
+  .differentiators {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    max-width: 1100px;
+    margin: 0 auto 40px;
+    padding: 0 24px;
+  }
+
+  .diff-card {
+    background: var(--hive-900);
+    border: 1px solid var(--hive-700);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+
+  .diff-card:hover {
+    border-color: var(--honey-dim);
+    transform: translateY(-2px);
+  }
+
+  .diff-card .icon { font-size: 1.5rem; margin-bottom: 6px; display: block; }
+  .diff-card .label { font-size: 0.82rem; color: var(--text-dim); line-height: 1.4; }
+
+  /* ─── Architecture Stack ──────────────────────────────────── */
+  .stack {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  /* ─── Layer ───────────────────────────────────────────────── */
+  .layer {
+    border: 1px solid var(--hive-700);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color 0.25s;
+  }
+
+  .layer:hover { border-color: var(--hive-500); }
+
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    cursor: pointer;
+    user-select: none;
+    background: var(--hive-900);
+    transition: background 0.2s;
+  }
+
+  .layer-header:hover { background: var(--hive-800); }
+
+  .layer-number {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .layer--mcp .layer-number   { background: rgba(96,165,250,0.18); color: var(--blue); }
+  .layer--wiki .layer-number  { background: rgba(167,139,250,0.18); color: var(--accent); }
+  .layer--mem .layer-number   { background: rgba(229,160,0,0.18); color: var(--honey); }
+  .layer--harv .layer-number  { background: rgba(52,211,153,0.18); color: var(--green); }
+  .layer--store .layer-number { background: rgba(251,146,60,0.18); color: var(--orange); }
+
+  .layer-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    flex: 1;
+  }
+
+  .layer-subtitle {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .layer-chevron {
+    width: 20px;
+    height: 20px;
+    transition: transform 0.25s;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .layer.open .layer-chevron { transform: rotate(180deg); }
+
+  .layer-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease;
+    background: var(--hive-950);
+  }
+
+  .layer.open .layer-body {
+    max-height: 2000px;
+  }
+
+  .layer-content {
+    padding: 20px;
+  }
+
+  /* ─── Tool Grid (MCP Layer) ───────────────────────────────── */
+  .tool-categories {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+  }
+
+  .tool-category {
+    background: var(--hive-900);
+    border: 1px solid var(--hive-700);
+    border-radius: 10px;
+    padding: 14px;
+  }
+
+  .tool-category-name {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--blue);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--hive-700);
+  }
+
+  .tool-list { list-style: none; }
+
+  .tool-list li {
+    font-size: 0.82rem;
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: default;
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-dim);
+  }
+
+  .tool-list li:hover {
+    background: var(--hive-800);
+    color: var(--text);
+  }
+
+  .tool-list li .dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .layer--mcp .tool-list li .dot   { background: var(--blue); }
+
+  /* Compatibility badges in MCP layer */
+  .compat-row {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--hive-700);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .compat-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-right: 4px;
+  }
+
+  .compat-badge {
+    font-size: 0.75rem;
+    padding: 3px 10px;
+    border-radius: 6px;
+    background: var(--hive-800);
+    color: var(--text-dim);
+    border: 1px solid var(--hive-700);
+  }
+
+  /* ─── Feature Grid (Wiki / Memory / Harvest) ──────────────── */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+  }
+
+  .feature-card {
+    background: var(--hive-900);
+    border: 1px solid var(--hive-700);
+    border-radius: 10px;
+    padding: 16px;
+    transition: border-color 0.2s, transform 0.2s;
+    cursor: default;
+  }
+
+  .feature-card:hover {
+    transform: translateY(-1px);
+  }
+
+  .layer--wiki .feature-card:hover  { border-color: var(--accent-dim); }
+  .layer--mem .feature-card:hover   { border-color: var(--honey-dim); }
+  .layer--harv .feature-card:hover  { border-color: rgba(52,211,153,0.5); }
+  .layer--store .feature-card:hover { border-color: rgba(251,146,60,0.5); }
+
+  .feature-card .title {
+    font-size: 0.92rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .layer--wiki .feature-card .title  { color: var(--accent); }
+  .layer--mem .feature-card .title   { color: var(--honey); }
+  .layer--harv .feature-card .title  { color: var(--green); }
+  .layer--store .feature-card .title { color: var(--orange); }
+
+  .feature-card .desc {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    line-height: 1.45;
+  }
+
+  .feature-card .detail-list {
+    list-style: none;
+    margin-top: 8px;
+  }
+
+  .feature-card .detail-list li {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    padding: 2px 0;
+    padding-left: 12px;
+    position: relative;
+  }
+
+  .feature-card .detail-list li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 9px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--hive-500);
+  }
+
+  /* ─── Adapter Chips (Harvest Layer) ─────────────────────── */
+  .adapter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .adapter-chip {
+    font-size: 0.78rem;
+    padding: 5px 12px;
+    border-radius: 8px;
+    background: var(--hive-900);
+    color: var(--text-dim);
+    border: 1px solid var(--hive-700);
+    cursor: default;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .adapter-chip:hover {
+    border-color: var(--green);
+    color: var(--green);
+  }
+
+  /* ─── Pipeline Steps ──────────────────────────────────────── */
+  .pipeline {
+    display: flex;
+    gap: 4px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+
+  .pipeline-step {
+    flex: 1;
+    min-width: 140px;
+    background: var(--hive-900);
+    border: 1px solid var(--hive-700);
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+    position: relative;
+    cursor: default;
+    transition: border-color 0.2s;
+  }
+
+  .pipeline-step:hover { border-color: var(--green); }
+
+  .pipeline-step .step-num {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--green);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+
+  .pipeline-step .step-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .pipeline-step .step-detail {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+
+  .pipeline-arrow {
+    display: flex;
+    align-items: center;
+    color: var(--hive-500);
+    font-size: 1.2rem;
+    flex-shrink: 0;
+    padding: 0 2px;
+  }
+
+  /* ─── Connection lines between layers ─────────────────────── */
+  .connector {
+    display: flex;
+    justify-content: center;
+    padding: 4px 0;
+  }
+
+  .connector-line {
+    width: 2px;
+    height: 20px;
+    background: linear-gradient(to bottom, var(--hive-600), var(--hive-700));
+    border-radius: 1px;
+  }
+
+  /* ─── Floating Tooltip ────────────────────────────────────── */
+  .tooltip {
+    position: fixed;
+    z-index: 10000;
+    padding: 10px 14px;
+    background: var(--hive-800);
+    border: 1px solid var(--hive-600);
+    border-radius: 8px;
+    font-size: 0.78rem;
+    color: var(--text);
+    line-height: 1.45;
+    max-width: 320px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+
+  .tooltip.visible { opacity: 1; }
+
+  .tooltip .tip-title {
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: var(--honey-light);
+  }
+
+  /* ─── Footer ──────────────────────────────────────────────── */
+  .footer {
+    text-align: center;
+    padding: 40px 24px;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    border-top: 1px solid var(--hive-800);
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .footer a {
+    color: var(--honey);
+    text-decoration: none;
+  }
+
+  .footer a:hover { text-decoration: underline; }
+
+  /* ─── Responsive ──────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .header h1 { font-size: 1.8rem; }
+    .header .tagline { font-size: 0.92rem; }
+    .tool-categories { grid-template-columns: 1fr; }
+    .feature-grid { grid-template-columns: 1fr; }
+    .pipeline { flex-direction: column; }
+    .pipeline-arrow { transform: rotate(90deg); justify-content: center; padding: 4px 0; }
+    .differentiators { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media (max-width: 480px) {
+    .differentiators { grid-template-columns: 1fr; }
+    .adapter-row { gap: 6px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ HEADER ════════════════════════════════════════════════ -->
+<div class="header">
+  <h1><span class="hive">Hive</span> <span class="mind">Mind</span></h1>
+  <p class="tagline">
+    Persistent memory for AI agents. Local-first, hybrid search, 21 MCP tools.
+    Your conversations become a navigable knowledge base.
+  </p>
+  <div class="badges">
+    <span class="badge badge--honey">Apache 2.0</span>
+    <span class="badge badge--accent">MCP Native</span>
+    <span class="badge badge--green">Local-First</span>
+  </div>
+</div>
+
+<!-- ═══ DIFFERENTIATORS ══════════════════════════════════════ -->
+<div class="differentiators">
+  <div class="diff-card">
+    <span class="icon">&#x1f512;</span>
+    <span class="label">Local-first: your data never leaves your machine</span>
+  </div>
+  <div class="diff-card">
+    <span class="icon">&#x1f500;</span>
+    <span class="label">11 AI platform adapters -- harvest your scattered AI history</span>
+  </div>
+  <div class="diff-card">
+    <span class="icon">&#x1f50d;</span>
+    <span class="label">Hybrid search: keyword + semantic + knowledge graph in one query</span>
+  </div>
+  <div class="diff-card">
+    <span class="icon">&#x1f4d6;</span>
+    <span class="label">Wiki compiler: memories become a navigable knowledge base</span>
+  </div>
+  <div class="diff-card">
+    <span class="icon">&#x2696;&#xfe0f;</span>
+    <span class="label">Apache 2.0 -- use it, fork it, extend it</span>
+  </div>
+</div>
+
+<!-- ═══ ARCHITECTURE STACK ═══════════════════════════════════ -->
+<div class="stack" id="stack">
+
+  <!-- ─── Layer 1: MCP Interface ─────────────────────────────── -->
+  <div class="layer layer--mcp open" id="layer-mcp">
+    <div class="layer-header" onclick="toggleLayer('layer-mcp')">
+      <div class="layer-number">1</div>
+      <div style="flex:1">
+        <div class="layer-title">MCP Interface Layer</div>
+        <div class="layer-subtitle">21 tools &middot; stdio transport &middot; any MCP client</div>
+      </div>
+      <svg class="layer-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="layer-body">
+      <div class="layer-content">
+        <div class="tool-categories">
+
+          <div class="tool-category">
+            <div class="tool-category-name">Memory</div>
+            <ul class="tool-list">
+              <li data-tip="Save a memory (fact, decision, preference) that persists across conversations. Auto-indexes for semantic search. Built-in deduplication."><span class="dot"></span> save_memory</li>
+              <li data-tip="Hybrid search across all memories: FTS5 keyword + sqlite-vec vector, fused via Reciprocal Rank Fusion. Supports time filters and workspace scoping."><span class="dot"></span> recall_memory</li>
+            </ul>
+          </div>
+
+          <div class="tool-category">
+            <div class="tool-category-name">Knowledge Graph</div>
+            <ul class="tool-list">
+              <li data-tip="Search entities (people, projects, concepts, organizations, technologies) with optional type filter. Returns entities enriched with their incoming/outgoing relations."><span class="dot"></span> search_entities</li>
+              <li data-tip="Create or update a typed entity. Auto-deduplicates by normalized name. Supports 8 entity types: person, project, concept, organization, technology, tool, location, event."><span class="dot"></span> save_entity</li>
+              <li data-tip="Create a typed, directed relationship between two entities. Includes confidence scoring (0-1) and temporal validity (valid_from / valid_to)."><span class="dot"></span> create_relation</li>
+            </ul>
+          </div>
+
+          <div class="tool-category">
+            <div class="tool-category-name">Identity</div>
+            <ul class="tool-list">
+              <li data-tip="Read the persistent user identity profile: name, role, department, personality traits, capabilities, and custom system prompt."><span class="dot"></span> get_identity</li>
+              <li data-tip="Create or update user identity fields. Partial updates supported: only provided fields are overwritten, omitted fields are preserved."><span class="dot"></span> set_identity</li>
+            </ul>
+          </div>
+
+          <div class="tool-category">
+            <div class="tool-category-name">Awareness</div>
+            <ul class="tool-list">
+              <li data-tip="Read active awareness items: current tasks, pending actions, context flags. Short-lived markers that maintain situational awareness. Items auto-expire via TTL."><span class="dot"></span> get_awareness</li>
+              <li data-tip="Set a context marker with category (task/action/pending/flag), priority, optional TTL expiry, and JSON metadata."><span class="dot"></span> set_awareness</li>
+              <li data-tip="Remove an awareness item by ID, or clear all items in a specific category (task/action/pending/flag)."><span class="dot"></span> clear_awareness</li>
+            </ul>
+          </div>
+
+          <div class="tool-category">
+            <div class="tool-category-name">Workspace</div>
+            <ul class="tool-list">
+              <li data-tip="List all workspaces with configuration and memory statistics (frame count, entity count, session count)."><span class="dot"></span> list_workspaces</li>
+              <li data-tip="Create a new workspace with its own isolated memory database (*.mind file). Each workspace gets independent frames, entities, sessions."><span class="dot"></span> create_workspace</li>
+            </ul>
+          </div>
+
+          <div class="tool-category">
+            <div class="tool-category-name">Harvest</div>
+            <ul class="tool-list">
+              <li data-tip="Import conversation history from external AI systems. Runs the 4-pass distillation pipeline: classify, extract, synthesize, dedup. Supports ChatGPT, Claude, Gemini, Perplexity, and more."><span class="dot"></span> harvest_import</li>
+              <li data-tip="List all registered harvest sources and their sync status: last import time, frame counts, adapter type."><span class="dot"></span> harvest_sources</li>
+            </ul>
+          </div>
+
+          <div class="tool-category">
+            <div class="tool-category-name">Cleanup</div>
+            <ul class="tool-list">
+              <li data-tip="Compact stale frames, remove test pollution, and reconcile search indexes. Modes: compact (routine maintenance) or wipe_imports (remove all imported frames)."><span class="dot"></span> cleanup_frames</li>
+              <li data-tip="Remove noise entities from the knowledge graph, deduplicate by normalized name, and retire orphan entities with no relations."><span class="dot"></span> cleanup_entities</li>
+            </ul>
+          </div>
+
+          <div class="tool-category">
+            <div class="tool-category-name">Ingest</div>
+            <ul class="tool-list">
+              <li data-tip="Ingest a document, URL, or text into memory. Auto-detects content type. Supports: markdown, plain text, PDF, web URLs, and raw text content."><span class="dot"></span> ingest_source</li>
+            </ul>
+          </div>
+
+          <div class="tool-category">
+            <div class="tool-category-name">Wiki</div>
+            <ul class="tool-list">
+              <li data-tip="Trigger incremental or full wiki compilation from memory frames and knowledge graph. Uses LLM-powered synthesis. Returns compilation statistics."><span class="dot"></span> compile_wiki</li>
+              <li data-tip="Read a compiled wiki page by slug (e.g., 'project-alpha', 'index', 'synthesis-memory'). Returns rendered markdown content."><span class="dot"></span> get_page</li>
+              <li data-tip="Search compiled wiki pages by name or type (entity / concept / synthesis / index). Returns matching page metadata and slugs."><span class="dot"></span> search_wiki</li>
+              <li data-tip="Health check: reports contradictions, knowledge gaps, orphan entities, weak-confidence pages, and an overall data quality score."><span class="dot"></span> compile_health</li>
+            </ul>
+          </div>
+
+        </div>
+
+        <div class="compat-row">
+          <span class="compat-label">Compatible with:</span>
+          <span class="compat-badge">Claude Code</span>
+          <span class="compat-badge">Claude Desktop</span>
+          <span class="compat-badge">Codex</span>
+          <span class="compat-badge">Hermes</span>
+          <span class="compat-badge">Any MCP Client</span>
+          <span class="compat-badge" style="border-color:var(--honey-dim);color:var(--honey)">stdio transport</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"><div class="connector-line"></div></div>
+
+  <!-- ─── Layer 2: Wiki Compiler ─────────────────────────────── -->
+  <div class="layer layer--wiki" id="layer-wiki">
+    <div class="layer-header" onclick="toggleLayer('layer-wiki')">
+      <div class="layer-number">2</div>
+      <div style="flex:1">
+        <div class="layer-title">Wiki Compiler</div>
+        <div class="layer-subtitle">LLM-powered synthesis &middot; incremental compilation &middot; markdown export</div>
+      </div>
+      <svg class="layer-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="layer-body">
+      <div class="layer-content">
+        <div class="feature-grid">
+          <div class="feature-card" data-tip="Automatically generated pages for each knowledge graph entity: people, projects, technologies, organizations. Aggregates all related memories and relations into a single reference page.">
+            <div class="title">Entity Pages</div>
+            <div class="desc">One page per knowledge graph entity. Aggregates related memories, relations, and temporal history.</div>
+            <ul class="detail-list">
+              <li>Person, project, concept, organization, technology, tool, location, event</li>
+              <li>Cross-linked via entity relations</li>
+            </ul>
+          </div>
+          <div class="feature-card" data-tip="Pages that synthesize knowledge around recurring concepts. LLM generates narrative summaries from scattered memory frames, identifying patterns and connections humans might miss.">
+            <div class="title">Concept Pages</div>
+            <div class="desc">Synthesized knowledge around recurring themes and concepts across your memory.</div>
+            <ul class="detail-list">
+              <li>LLM-generated narrative summaries</li>
+              <li>Pattern detection across frames</li>
+            </ul>
+          </div>
+          <div class="feature-card" data-tip="High-level synthesis pages that combine entity and concept knowledge into comprehensive overviews. These are the 'executive summary' of your knowledge base.">
+            <div class="title">Synthesis Pages</div>
+            <div class="desc">High-level overviews combining entities and concepts into comprehensive narratives.</div>
+            <ul class="detail-list">
+              <li>Cross-domain synthesis</li>
+              <li>Automatic table of contents</li>
+            </ul>
+          </div>
+          <div class="feature-card" data-tip="Navigable index page listing all compiled pages by type. Serves as the entry point to the wiki. Automatically updated on each compilation.">
+            <div class="title">Index Page</div>
+            <div class="desc">Auto-generated navigation hub listing all compiled pages by type.</div>
+          </div>
+          <div class="feature-card" data-tip="Only recompiles pages whose source data has changed since the last run. Tracks watermarks per page to avoid redundant LLM calls. Full recompilation available as override.">
+            <div class="title">Incremental Compilation</div>
+            <div class="desc">Watermark-based tracking recompiles only changed pages. Avoids redundant LLM calls.</div>
+          </div>
+          <div class="feature-card" data-tip="Automated data quality analysis: detects contradictions between frames, identifies knowledge gaps, finds orphan entities with no relations, and flags low-confidence pages.">
+            <div class="title">Health Reports</div>
+            <div class="desc">Detects contradictions, knowledge gaps, orphan entities, and weak-confidence pages.</div>
+            <ul class="detail-list">
+              <li>Data quality score</li>
+              <li>Actionable remediation hints</li>
+            </ul>
+          </div>
+          <div class="feature-card" data-tip="Supports OpenAI, Anthropic, and Ollama as synthesis backends. Auto-resolves the best available provider from environment variables. Falls back gracefully.">
+            <div class="title">LLM Providers</div>
+            <div class="desc">OpenAI, Anthropic, or Ollama for synthesis. Auto-resolves from environment.</div>
+          </div>
+          <div class="feature-card" data-tip="All compiled pages are standard markdown files. Export the entire wiki to disk for use with any markdown viewer, static site generator, or documentation tool.">
+            <div class="title">Markdown Export</div>
+            <div class="desc">Standard markdown output. Compatible with any viewer, SSG, or documentation tool.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"><div class="connector-line"></div></div>
+
+  <!-- ─── Layer 3: Memory Substrate ──────────────────────────── -->
+  <div class="layer layer--mem" id="layer-mem">
+    <div class="layer-header" onclick="toggleLayer('layer-mem')">
+      <div class="layer-number">3</div>
+      <div style="flex:1">
+        <div class="layer-title">Memory Substrate</div>
+        <div class="layer-subtitle">6 subsystems &middot; hybrid search &middot; knowledge graph &middot; temporal validity</div>
+      </div>
+      <svg class="layer-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="layer-body">
+      <div class="layer-content">
+        <div class="feature-grid">
+          <div class="feature-card" data-tip="Video-codec-inspired memory architecture. I-frames are immutable facts (anchors). P-frames are procedural deltas (changes/updates). B-frames are bidirectional references (connecting past and future context). Built-in dedup via content hashing.">
+            <div class="title">FrameStore</div>
+            <div class="desc">Video-codec-inspired memory frames with importance scoring and content deduplication.</div>
+            <ul class="detail-list">
+              <li>I-frames: immutable facts (anchors)</li>
+              <li>P-frames: procedural knowledge (deltas)</li>
+              <li>B-frames: bidirectional references</li>
+              <li>5 importance levels: critical to deprecated</li>
+              <li>Content-hash deduplication</li>
+            </ul>
+          </div>
+          <div class="feature-card" data-tip="Parallel FTS5 keyword search + sqlite-vec vector search, fused via Reciprocal Rank Fusion (RRF, k=60). Relevance scoring considers recency, access frequency, importance level, and source trustworthiness. Multiple scoring profiles: balanced, recent, comprehensive.">
+            <div class="title">HybridSearch</div>
+            <div class="desc">Dual-mode search fused via Reciprocal Rank Fusion for maximum recall.</div>
+            <ul class="detail-list">
+              <li>FTS5 keyword search (porter + unicode61)</li>
+              <li>sqlite-vec vector search</li>
+              <li>RRF fusion (k=60)</li>
+              <li>Scoring profiles: balanced, recent, comprehensive</li>
+              <li>Recency, frequency, importance weighting</li>
+            </ul>
+          </div>
+          <div class="feature-card" data-tip="Typed entities (8 types) connected by directed, typed relations. Each entity and relation has temporal validity (valid_from/valid_to) and a recorded_at timestamp for bitemporal tracking. Confidence scoring on relations (0.0-1.0).">
+            <div class="title">KnowledgeGraph</div>
+            <div class="desc">Typed entities and relations with bitemporal validity and confidence scoring.</div>
+            <ul class="detail-list">
+              <li>8 entity types</li>
+              <li>Directed, typed relations</li>
+              <li>Temporal validity (valid_from / valid_to)</li>
+              <li>Confidence scoring (0.0 - 1.0)</li>
+              <li>Bitemporal tracking</li>
+            </ul>
+          </div>
+          <div class="feature-card" data-tip="Single-row persistent identity store: name, role, department, personality traits, capabilities, and custom system prompt. Survives across all sessions and restarts. The AI remembers who you are.">
+            <div class="title">IdentityLayer</div>
+            <div class="desc">Persistent user profile. Name, role, personality, capabilities. Survives all sessions.</div>
+          </div>
+          <div class="feature-card" data-tip="Short-lived context markers for active tasks, pending actions, and flags. TTL-based expiry (expires_at). Limited to ~10 active items to keep context focused. Categories: task, action, pending, flag.">
+            <div class="title">AwarenessLayer</div>
+            <div class="desc">Active task and context tracking with TTL-based expiry. Maintains situational awareness.</div>
+            <ul class="detail-list">
+              <li>Categories: task, action, pending, flag</li>
+              <li>Priority ordering</li>
+              <li>Auto-expiry via TTL</li>
+            </ul>
+          </div>
+          <div class="feature-card" data-tip="Conversation tracking via session records. Each session maps a unique GOP ID to a project. Statuses: active, closed, archived. Daily auto-grouping for MCP sessions (mcp:YYYY-MM-DD).">
+            <div class="title">SessionStore</div>
+            <div class="desc">Conversation tracking with project mapping. Daily auto-grouping for MCP sessions.</div>
+            <ul class="detail-list">
+              <li>GOP ID to project mapping</li>
+              <li>Active / closed / archived states</li>
+              <li>Summary field for session context</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"><div class="connector-line"></div></div>
+
+  <!-- ─── Layer 4: Harvest Pipeline ──────────────────────────── -->
+  <div class="layer layer--harv" id="layer-harv">
+    <div class="layer-header" onclick="toggleLayer('layer-harv')">
+      <div class="layer-number">4</div>
+      <div style="flex:1">
+        <div class="layer-title">Harvest Pipeline</div>
+        <div class="layer-subtitle">11 adapters &middot; 4-pass distillation &middot; injection scanner</div>
+      </div>
+      <svg class="layer-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="layer-body">
+      <div class="layer-content">
+
+        <div class="adapter-row">
+          <span class="adapter-chip" data-tip="Parse ChatGPT JSON exports (conversations.json). Extracts user/assistant turns, handles multi-part messages, and maps conversation metadata.">ChatGPT</span>
+          <span class="adapter-chip" data-tip="Parse Claude conversation exports. Handles artifact blocks, thinking blocks, and tool-use turns.">Claude</span>
+          <span class="adapter-chip" data-tip="Parse Claude Code session transcripts. Extracts decisions, file changes, and command outputs from coding sessions.">Claude Code</span>
+          <span class="adapter-chip" data-tip="Parse Gemini conversation exports. Handles multi-modal responses and code blocks.">Gemini</span>
+          <span class="adapter-chip" data-tip="Parse Perplexity conversation exports. Extracts cited sources and research findings.">Perplexity</span>
+          <span class="adapter-chip" data-tip="Ingest markdown files (.md). Preserves heading structure for chunking. Extracts front-matter metadata.">Markdown</span>
+          <span class="adapter-chip" data-tip="Ingest plain text files (.txt). Simple line-based chunking with configurable chunk size.">Plaintext</span>
+          <span class="adapter-chip" data-tip="Ingest PDF documents. Text extraction with page-aware chunking.">PDF</span>
+          <span class="adapter-chip" data-tip="Fetch and ingest web page content from URLs. HTML to text conversion with link extraction.">URL</span>
+          <span class="adapter-chip" data-tip="Universal fallback adapter. Auto-detects content type and delegates to the appropriate specialized adapter.">Universal</span>
+          <span class="adapter-chip" data-tip="Raw text content ingestion. Accepts pre-processed text directly, bypassing file/URL parsing. Used for programmatic ingestion.">Raw Text</span>
+        </div>
+
+        <div class="pipeline">
+          <div class="pipeline-step" data-tip="Pass 1 (fast model): Classify each item by knowledge value: high, medium, low, or noise. Low-value items are filtered out before expensive extraction. Batch size: 20 items per LLM call.">
+            <div class="step-num">Pass 1</div>
+            <div class="step-name">Classify</div>
+            <div class="step-detail">Fast model &middot; value scoring &middot; noise filter</div>
+          </div>
+          <div class="pipeline-arrow">&rarr;</div>
+          <div class="pipeline-step" data-tip="Pass 2 (accurate model): Extract structured knowledge from high/medium-value items. Outputs facts, decisions, preferences, procedures, and relationships.">
+            <div class="step-num">Pass 2</div>
+            <div class="step-name">Extract</div>
+            <div class="step-detail">Accurate model &middot; structured knowledge</div>
+          </div>
+          <div class="pipeline-arrow">&rarr;</div>
+          <div class="pipeline-step" data-tip="Pass 3 (accurate model): Synthesize extracted knowledge into concise, self-contained memory frames. Resolves conflicts, merges related items, and normalizes terminology.">
+            <div class="step-num">Pass 3</div>
+            <div class="step-name">Synthesize</div>
+            <div class="step-detail">Accurate model &middot; frame generation</div>
+          </div>
+          <div class="pipeline-arrow">&rarr;</div>
+          <div class="pipeline-step" data-tip="Pass 4 (local, no LLM): Deduplicate synthesized frames against existing memory. Content-hash comparison + fuzzy matching. No external API calls required.">
+            <div class="step-num">Pass 4</div>
+            <div class="step-name">Dedup</div>
+            <div class="step-detail">Local &middot; no LLM &middot; content-hash</div>
+          </div>
+        </div>
+
+        <div class="feature-grid" style="margin-top: 16px;">
+          <div class="feature-card" data-tip="All external input (conversation exports, documents, URLs) passes through the injection scanner before entering the memory system. Detects prompt injection attempts across 3 pattern sets.">
+            <div class="title">Injection Scanner</div>
+            <div class="desc">Security gate: 3 pattern sets scan all external input for prompt injection before memory ingestion.</div>
+          </div>
+          <div class="feature-card" data-tip="Batch processing with configurable concurrency (default: 3 parallel LLM calls). Batches of 20 items per call. Progress callbacks for UI integration. Configurable failure fallback (skip vs pass-through).">
+            <div class="title">Concurrent Batching</div>
+            <div class="desc">Parallel LLM calls (cap: 3) with batches of 20 items. Progress callbacks for UI.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"><div class="connector-line"></div></div>
+
+  <!-- ─── Layer 5: Storage Layer ─────────────────────────────── -->
+  <div class="layer layer--store" id="layer-store">
+    <div class="layer-header" onclick="toggleLayer('layer-store')">
+      <div class="layer-number">5</div>
+      <div style="flex:1">
+        <div class="layer-title">Storage Layer</div>
+        <div class="layer-subtitle">SQLite + sqlite-vec &middot; WAL mode &middot; per-workspace isolation</div>
+      </div>
+      <svg class="layer-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="layer-body">
+      <div class="layer-content">
+        <div class="feature-grid">
+          <div class="feature-card" data-tip="better-sqlite3 for synchronous, high-performance SQLite access. WAL (Write-Ahead Logging) mode for concurrent reads during writes. No external database server required.">
+            <div class="title">SQLite (better-sqlite3)</div>
+            <div class="desc">Synchronous, high-performance embedded database. WAL mode for concurrent reads.</div>
+            <ul class="detail-list">
+              <li>No external server required</li>
+              <li>Write-Ahead Logging</li>
+              <li>ACID transactions</li>
+            </ul>
+          </div>
+          <div class="feature-card" data-tip="sqlite-vec extension for vector similarity search. Stores and queries embedding vectors directly in SQLite. Cosine similarity via the vec0 virtual table. No vector database dependency.">
+            <div class="title">sqlite-vec Extension</div>
+            <div class="desc">Vector similarity search inside SQLite. Cosine similarity via vec0 virtual tables.</div>
+            <ul class="detail-list">
+              <li>No separate vector DB</li>
+              <li>Embedding storage + query</li>
+              <li>Cosine similarity</li>
+            </ul>
+          </div>
+          <div class="feature-card" data-tip="FTS5 full-text search with porter stemming and unicode61 tokenization. Indexes memory frame content for fast keyword lookup. Combined with vector search via RRF.">
+            <div class="title">FTS5 Indexes</div>
+            <div class="desc">Full-text search with porter stemming. Unicode-aware tokenization.</div>
+          </div>
+          <div class="feature-card" data-tip="Each workspace gets its own isolated .mind file (SQLite database). Personal memory is always in personal.mind. Workspace databases are created on demand and can be listed, created, and switched between.">
+            <div class="title">Per-Workspace Isolation</div>
+            <div class="desc">Each workspace owns a separate .mind database file. Complete data isolation.</div>
+            <ul class="detail-list">
+              <li>personal.mind + workspace.mind</li>
+              <li>Created on demand</li>
+              <li>Independent schema lifecycle</li>
+            </ul>
+          </div>
+          <div class="feature-card" data-tip="On first run, Hive Mind auto-creates the data directory (~/.hive-mind/) and initializes the personal.mind database with all schema tables, indexes, FTS5, and vec0 virtual tables. Zero configuration required.">
+            <div class="title">Auto-Init</div>
+            <div class="desc">Zero configuration. Auto-creates ~/.hive-mind/ and initializes schema on first run.</div>
+          </div>
+          <div class="feature-card" data-tip="Schema versioning via meta table. Tracks current version and supports forward migration. Ensures database compatibility across Hive Mind upgrades.">
+            <div class="title">Schema Versioning</div>
+            <div class="desc">Meta table tracks schema version. Forward migration on upgrade.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══ FOOTER ═══════════════════════════════════════════════ -->
+<div class="footer">
+  <p>Hive Mind &mdash; Persistent memory for AI agents</p>
+  <p style="margin-top:6px;">
+    <a href="https://github.com/egzakta/hive-mind" target="_blank">GitHub</a>
+    &nbsp;&middot;&nbsp;
+    Apache 2.0 License
+    &nbsp;&middot;&nbsp;
+    <a href="https://waggle-os.ai" target="_blank">Built by Waggle OS</a>
+  </p>
+</div>
+
+<!-- ═══ TOOLTIP (body-level, avoids overflow clipping) ═══════ -->
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Layer toggle ───────────────────────────────────────────
+  window.toggleLayer = function toggleLayer(id) {
+    var layer = document.getElementById(id);
+    if (!layer) return;
+    layer.classList.toggle('open');
+  };
+
+  // ── Floating tooltip system ────────────────────────────────
+  var tip = document.getElementById('tooltip');
+  var activeTipTarget = null;
+  var hideTimer = null;
+
+  function showTooltip(el, text) {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    activeTipTarget = el;
+
+    // Build content safely via textContent
+    tip.textContent = '';
+    var p = document.createElement('span');
+    p.textContent = text;
+    tip.appendChild(p);
+    tip.classList.add('visible');
+
+    positionTooltip(el);
+  }
+
+  function positionTooltip(el) {
+    var rect = el.getBoundingClientRect();
+    var tipW = tip.offsetWidth;
+    var tipH = tip.offsetHeight;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+
+    // Prefer placing below the element
+    var top = rect.bottom + 8;
+    var left = rect.left + (rect.width / 2) - (tipW / 2);
+
+    // If below would go off screen, place above
+    if (top + tipH > vh - 12) {
+      top = rect.top - tipH - 8;
+    }
+
+    // Clamp horizontal
+    if (left < 12) left = 12;
+    if (left + tipW > vw - 12) left = vw - tipW - 12;
+
+    // Clamp vertical
+    if (top < 12) top = 12;
+
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  }
+
+  function hideTooltip() {
+    hideTimer = setTimeout(function () {
+      tip.classList.remove('visible');
+      activeTipTarget = null;
+    }, 80);
+  }
+
+  // Delegate mouseover/mouseout on [data-tip] elements
+  document.addEventListener('mouseover', function (e) {
+    var target = e.target.closest('[data-tip]');
+    if (!target) return;
+    var text = target.getAttribute('data-tip');
+    if (!text) return;
+    showTooltip(target, text);
+  });
+
+  document.addEventListener('mouseout', function (e) {
+    var target = e.target.closest('[data-tip]');
+    if (!target) return;
+    // Check if we're moving to a child of the same target
+    var related = e.relatedTarget;
+    if (related && target.contains(related)) return;
+    hideTooltip();
+  });
+
+  // Reposition on scroll / resize
+  window.addEventListener('scroll', function () {
+    if (activeTipTarget) positionTooltip(activeTipTarget);
+  }, { passive: true });
+
+  window.addEventListener('resize', function () {
+    if (activeTipTarget) positionTooltip(activeTipTarget);
+  }, { passive: true });
+
+  // ── Touch support for tooltips ─────────────────────────────
+  document.addEventListener('touchstart', function (e) {
+    var target = e.target.closest('[data-tip]');
+    if (!target) {
+      hideTooltip();
+      return;
+    }
+    var text = target.getAttribute('data-tip');
+    if (text) showTooltip(target, text);
+  }, { passive: true });
+
+  // ── Keyboard accessibility ─────────────────────────────────
+  // Allow Enter/Space to toggle layers when header is focused
+  document.querySelectorAll('.layer-header').forEach(function (header) {
+    header.setAttribute('tabindex', '0');
+    header.setAttribute('role', 'button');
+    var layer = header.closest('.layer');
+    header.setAttribute('aria-expanded', layer.classList.contains('open') ? 'true' : 'false');
+
+    header.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        header.click();
+        var isOpen = layer.classList.contains('open');
+        header.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      }
+    });
+  });
+
+  // Update aria-expanded on click too
+  document.querySelectorAll('.layer-header').forEach(function (header) {
+    header.addEventListener('click', function () {
+      var layer = header.closest('.layer');
+      // Delay to let toggleLayer run first
+      setTimeout(function () {
+        var isOpen = layer.classList.contains('open');
+        header.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      }, 0);
+    });
+  });
+})();
+</script>
+</body>
+</html>

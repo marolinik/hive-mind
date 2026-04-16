@@ -1,0 +1,16 @@
+{
+  "name": "@hive-mind/mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server exposing hive-mind memory via 21 tools for Claude Code, Codex, Hermes",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": { "hive-mind": "dist/index.js" },
+  "scripts": { "build": "tsc", "start": "node dist/index.js" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.3",
+    "@hive-mind/core": "*",
+    "@hive-mind/wiki-compiler": "*",
+    "zod": "^3.23.0"
+  }
+}
