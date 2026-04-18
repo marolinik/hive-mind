@@ -32,11 +32,11 @@
   "publishConfig": { "access": "public" },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/egzakta/hive-mind.git",
+    "url": "git+https://github.com/marolinik/hive-mind.git",
     "directory": "packages/wiki-compiler"
   },
-  "homepage": "https://github.com/egzakta/hive-mind/tree/master/packages/wiki-compiler#readme",
-  "bugs": { "url": "https://github.com/egzakta/hive-mind/issues" },
+  "homepage": "https://github.com/marolinik/hive-mind/tree/master/packages/wiki-compiler#readme",
+  "bugs": { "url": "https://github.com/marolinik/hive-mind/issues" },
   "author": "Egzakta Group d.o.o. <hello@egzakta.com> (https://egzakta.com)",
   "keywords": [
     "wiki",

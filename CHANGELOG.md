@@ -66,4 +66,4 @@ Initial public release. Memory substrate, harvest pipeline, wiki compiler, and M
 
 See [`EXTRACTION.md`](./EXTRACTION.md) for the full extraction mapping and [`NOTICE`](./NOTICE) for the authoritative attribution.
 
-[0.1.0]: https://github.com/egzakta/hive-mind/releases/tag/v0.1.0
+[0.1.0]: https://github.com/marolinik/hive-mind/releases/tag/v0.1.0

@@ -1,6 +1,6 @@
 # hive-mind -- Local-First AI Memory System
 
-[![CI](https://github.com/egzakta/hive-mind/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/egzakta/hive-mind/actions/workflows/ci.yml)
+[![CI](https://github.com/marolinik/hive-mind/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/marolinik/hive-mind/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![npm: core](https://img.shields.io/npm/v/@hive-mind/core.svg?label=%40hive-mind%2Fcore)](https://www.npmjs.com/package/@hive-mind/core)
 [![npm: wiki-compiler](https://img.shields.io/npm/v/@hive-mind/wiki-compiler.svg?label=%40hive-mind%2Fwiki-compiler)](https://www.npmjs.com/package/@hive-mind/wiki-compiler)

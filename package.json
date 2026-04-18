@@ -16,7 +16,7 @@
     "typecheck": "tsc --build --noEmit",
     "clean": "tsc --build --clean && rm -rf packages/*/dist"
   },
-  "repository": { "type": "git", "url": "https://github.com/egzakta/hive-mind" },
+  "repository": { "type": "git", "url": "https://github.com/marolinik/hive-mind" },
   "keywords": ["memory", "ai", "mcp", "knowledge-graph", "wiki", "local-first", "semantic-search"],
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",

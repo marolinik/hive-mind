@@ -45,4 +45,4 @@ Apache 2.0. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
 
 ## Part of hive-mind
 
-Full docs and architecture at the [monorepo root](https://github.com/egzakta/hive-mind).
+Full docs and architecture at the [monorepo root](https://github.com/marolinik/hive-mind).
