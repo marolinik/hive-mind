@@ -107,22 +107,23 @@ describe('AwarenessLayer', () => {
   });
 
   it('expired items are excluded from getAll() / getByCategory()', () => {
-    // The query filters via `expires_at > datetime('now')`, which is a raw
-    // string comparison in SQLite. `datetime('now')` yields `'YYYY-MM-DD HH:MM:SS'`
-    // (space separator, no fractional seconds, no Z). Full ISO strings (`T`
-    // separator, `Z` suffix) sort greater than any space-separated value in
-    // ASCII, so feeding ISO strings here would mask expiry. The test uses
-    // SQLite-native format to exercise the intended contract.
-    const sqliteDatetime = (offsetMs: number): string => {
-      const d = new Date(Date.now() + offsetMs);
-      return d.toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
-    };
+    // Covers the ISO-8601-vs-SQLite-datetime comparison bug: the query wraps
+    // `expires_at` in `datetime()` so ISO strings with `T` separator and `Z`
+    // suffix compare correctly against `datetime('now')`. This test feeds
+    // `new Date().toISOString()` directly — the format every JS caller will
+    // reach for first.
+    const pastIso = new Date(Date.now() - 60_000).toISOString();
+    const futureIso = new Date(Date.now() + 60_000).toISOString();
 
-    awareness.add('task', 'expired', 0, sqliteDatetime(-60_000));
-    const alive = awareness.add('task', 'alive', 0, sqliteDatetime(+60_000));
+    awareness.add('task', 'expired', 0, pastIso);
+    const alive = awareness.add('task', 'alive', 0, futureIso);
 
     const visible = awareness.getAll().map((i) => i.id);
     expect(visible).toEqual([alive.id]);
+
+    // Same guarantee on the category-scoped read path.
+    const tasks = awareness.getByCategory('task').map((i) => i.id);
+    expect(tasks).toEqual([alive.id]);
   });
 
   it('remove() / clear() / clearCategory() delete rows as expected', () => {

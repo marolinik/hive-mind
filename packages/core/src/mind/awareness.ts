@@ -20,6 +20,14 @@
  * statement (no multi-statement support needed) and keeping the codebase
  * free of `.exec(` calls keeps repo-level security scanners happy without
  * requiring per-file helpers.
+ *
+ * Bug fix (pushed upstream to Waggle OS in the same session): the `expires_at`
+ * comparison now wraps both operands in `datetime()` — i.e.
+ * `datetime(expires_at) > datetime('now')` — so ISO-8601 strings with `T`
+ * separator and `Z` suffix compare correctly against SQLite's space-separated
+ * `datetime('now')` output. The previous raw string comparison ASCII-sorted
+ * ISO `T` (0x54) greater than space (0x20), so any ISO-format `expires_at`
+ * silently never expired regardless of its actual time value.
  */
 
 import type { MindDB } from './db.js';
@@ -145,7 +153,7 @@ export class AwarenessLayer {
     const items = raw
       .prepare(
         `SELECT * FROM awareness
-         WHERE (expires_at IS NULL OR expires_at > datetime('now'))
+         WHERE (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
          ORDER BY priority DESC`,
       )
       .all() as AwarenessItem[];
@@ -172,7 +180,7 @@ export class AwarenessLayer {
       .getDatabase()
       .prepare(
         `SELECT * FROM awareness
-         WHERE expires_at IS NULL OR expires_at > datetime('now')
+         WHERE expires_at IS NULL OR datetime(expires_at) > datetime('now')
          ORDER BY priority DESC
          LIMIT ?`,
       )
@@ -184,7 +192,7 @@ export class AwarenessLayer {
       .getDatabase()
       .prepare(
         `SELECT * FROM awareness
-         WHERE category = ? AND (expires_at IS NULL OR expires_at > datetime('now'))
+         WHERE category = ? AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
          ORDER BY priority DESC
          LIMIT ?`,
       )
