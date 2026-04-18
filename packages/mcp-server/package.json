@@ -1,16 +1,39 @@
 {
   "name": "@hive-mind/mcp-server",
   "version": "0.1.0",
-  "description": "MCP server exposing hive-mind memory via 21 tools for Claude Code, Codex, Hermes",
+  "description": "MCP server exposing hive-mind memory (21 tools + 4 resources) over stdio for Claude Code, Claude Desktop, Codex, and any MCP-compatible client",
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
-  "bin": { "hive-mind": "dist/index.js" },
-  "scripts": { "build": "tsc", "start": "node dist/index.js" },
+  "types": "dist/index.d.ts",
+  "bin": {
+    "hive-mind-memory-mcp": "dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./tools/*": {
+      "types": "./dist/tools/*.d.ts",
+      "import": "./dist/tools/*.js"
+    },
+    "./resources/*": {
+      "types": "./dist/resources/*.d.ts",
+      "import": "./dist/resources/*.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "start": "node dist/index.js"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.3",
     "@hive-mind/core": "*",
     "@hive-mind/wiki-compiler": "*",
     "zod": "^3.23.0"
-  }
+  },
+  "publishConfig": { "access": "public" }
 }
