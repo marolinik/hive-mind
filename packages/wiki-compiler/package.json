@@ -1,10 +1,33 @@
 {
   "name": "@hive-mind/wiki-compiler",
   "version": "0.1.0",
-  "description": "Compile memory frames into interlinked wiki pages with LLM synthesis",
+  "description": "Compile memory frames and knowledge graph entities into interlinked wiki pages via LLM synthesis",
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "scripts": { "build": "tsc" }
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean"
+  },
+  "dependencies": {
+    "@hive-mind/core": "*"
+  },
+  "peerDependencies": {
+    "@anthropic-ai/sdk": "^0.24.0"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/sdk": { "optional": true }
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.24.0"
+  },
+  "publishConfig": { "access": "public" }
 }
