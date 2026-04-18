@@ -21,5 +21,14 @@
     "better-sqlite3": "^12.6.2",
     "sqlite-vec": "^0.1.7-alpha.2"
   },
+  "peerDependencies": {
+    "@huggingface/transformers": "^3.8.1"
+  },
+  "peerDependenciesMeta": {
+    "@huggingface/transformers": { "optional": true }
+  },
+  "devDependencies": {
+    "@huggingface/transformers": "^3.8.1"
+  },
   "publishConfig": { "access": "public" }
 }
