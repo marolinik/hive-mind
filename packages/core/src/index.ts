@@ -27,10 +27,15 @@
 //                                          after crashes (find orphaned frames,
 //                                          re-index) plus orphan sweeps in the
 //                                          reverse direction. Last module in
-//                                          the mind/ substrate — the @hive-mind/
-//                                          core memory layer is now complete.
-// Subsequent waves add the harvest pipeline. See EXTRACTION.md in the
-// repository root for the full roadmap.
+//                                          the mind/ substrate.
+//   Wave 3A (harvest foundation)         — Universal import types,
+//                                          paragraph chunker, LLM prompt
+//                                          templates, HarvestSourceStore, and
+//                                          local dedup (hash + trigram) with
+//                                          contradiction detection. Adapters
+//                                          and pipeline orchestrator follow in
+//                                          3B / 3C.
+// See EXTRACTION.md in the repository root for the full roadmap.
 
 export const VERSION = '0.1.0';
 
@@ -51,6 +56,10 @@ export type {
 // Sessions
 export { SessionStore } from './mind/sessions.js';
 export type { Session } from './mind/sessions.js';
+
+// Harvest pipeline (Wave 3A foundation: types + chunker + prompts + source
+// store + dedup; adapters and orchestrator added in 3B / 3C).
+export * from './harvest/index.js';
 
 // Index reconciliation (maintenance helpers)
 export {
