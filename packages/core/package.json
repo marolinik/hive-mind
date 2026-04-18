@@ -22,13 +22,16 @@
     "sqlite-vec": "^0.1.7-alpha.2"
   },
   "peerDependencies": {
-    "@huggingface/transformers": "^3.8.1"
+    "@huggingface/transformers": "^3.8.1",
+    "pdf-parse": "^2.4.5"
   },
   "peerDependenciesMeta": {
-    "@huggingface/transformers": { "optional": true }
+    "@huggingface/transformers": { "optional": true },
+    "pdf-parse": { "optional": true }
   },
   "devDependencies": {
-    "@huggingface/transformers": "^3.8.1"
+    "@huggingface/transformers": "^3.8.1",
+    "pdf-parse": "^2.4.5"
   },
   "publishConfig": { "access": "public" }
 }

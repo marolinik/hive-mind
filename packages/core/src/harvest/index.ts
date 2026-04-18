@@ -1,14 +1,27 @@
 // Harvest pipeline public surface.
 //
-// Wave 3A ships the foundation layer: universal types, the text-chunking
-// helper, LLM prompt templates, the source-tracking store, and the local
-// dedup filter. Wave 3B adds the source-specific adapters. Wave 3C adds
-// the pipeline orchestrator and the two largest adapters (claude-code,
-// pipeline.ts). See EXTRACTION.md for the file map.
+// Wave 3A (foundation): universal types, text chunker, LLM prompts,
+//   HarvestSourceStore, local dedup.
+// Wave 3B (parse-only adapters): 9 source-specific adapters that turn
+//   provider exports / documents / URLs into UniversalImportItem[].
+// Wave 3C (pipeline + claude-code): the orchestrator and the largest adapter.
+// See EXTRACTION.md for the file map.
 
+// Foundation
 export * from './types.js';
 export { chunkByParagraphs } from './chunk-utils.js';
 export { CLASSIFY_PROMPT, EXTRACT_PROMPT, SYNTHESIZE_PROMPT } from './prompts.js';
 export { HarvestSourceStore } from './source-store.js';
 export { dedup } from './dedup.js';
 export type { DedupResult } from './dedup.js';
+
+// Parse-only adapters (Wave 3B)
+export { ChatGPTAdapter } from './chatgpt-adapter.js';
+export { ClaudeAdapter } from './claude-adapter.js';
+export { GeminiAdapter } from './gemini-adapter.js';
+export { PerplexityAdapter } from './perplexity-adapter.js';
+export { PlaintextAdapter } from './plaintext-adapter.js';
+export { MarkdownAdapter } from './markdown-adapter.js';
+export { UrlAdapter } from './url-adapter.js';
+export { PdfAdapter } from './pdf-adapter.js';
+export { UniversalAdapter } from './universal-adapter.js';
