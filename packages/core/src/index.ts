@@ -18,9 +18,13 @@
 //                                          normalization/dedup utilities, and
 //                                          ConceptTracker (spaced-repetition
 //                                          mastery on 1-5 scale).
-// Subsequent waves add IdentityLayer, AwarenessLayer, reconcile, and the
-// harvest pipeline. See EXTRACTION.md in the repository root for the full
-// roadmap.
+//   Wave 2E (identity + awareness)       — IdentityLayer (single-row "who am I"
+//                                          persistence with context rendering)
+//                                          and AwarenessLayer (short-lived
+//                                          task/action/pending/flag items with
+//                                          TTL and metadata).
+// Subsequent waves add reconcile and the harvest pipeline. See EXTRACTION.md
+// in the repository root for the full roadmap.
 
 export const VERSION = '0.1.0';
 
@@ -41,6 +45,16 @@ export type {
 // Sessions
 export { SessionStore } from './mind/sessions.js';
 export type { Session } from './mind/sessions.js';
+
+// Identity + awareness
+export { IdentityLayer } from './mind/identity.js';
+export type { Identity } from './mind/identity.js';
+export { AwarenessLayer } from './mind/awareness.js';
+export type {
+  AwarenessCategory,
+  AwarenessMetadata,
+  AwarenessItem,
+} from './mind/awareness.js';
 
 // Knowledge graph
 export { KnowledgeGraph } from './mind/knowledge.js';
