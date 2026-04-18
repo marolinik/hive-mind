@@ -14,6 +14,7 @@ import {
   getSearch,
   getKnowledgeGraph,
   getHarvestSourceStore,
+  getPersonalDb,
   getAdapter,
 } from '../core/setup.js';
 import { UrlAdapter } from '@hive-mind/core';
@@ -93,7 +94,13 @@ export function registerIngestTools(server: McpServer): void {
       let framesCreated = 0;
       let duplicatesSkipped = 0;
       let entitiesCreated = 0;
-      const batchStartIso = new Date().toISOString();
+
+      // Record max frame id before the batch — see harvest.ts for rationale
+      // (id-based dedup detection avoids the ISO-vs-space timestamp format
+      // mismatch between JS Dates and SQLite datetime('now')).
+      const rawDb = getPersonalDb().getDatabase();
+      const maxBefore =
+        (rawDb.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM memory_frames').get() as { m: number }).m;
 
       for (const item of items) {
         const frameContent = item.title
@@ -107,7 +114,7 @@ export function registerIngestTools(server: McpServer): void {
           'import',
         );
 
-        const isNew = frame.created_at >= batchStartIso;
+        const isNew = frame.id > maxBefore;
 
         if (isNew) {
           framesCreated++;

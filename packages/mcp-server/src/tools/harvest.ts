@@ -12,6 +12,7 @@ import {
   getSearch,
   getKnowledgeGraph,
   getHarvestSourceStore,
+  getPersonalDb,
   getAdapter,
 } from '../core/setup.js';
 
@@ -92,8 +93,13 @@ export function registerHarvestTools(server: McpServer): void {
       let duplicatesSkipped = 0;
       let entitiesCreated = 0;
 
-      // Record batch start — any frame created before this is a dedup hit
-      const batchStartIso = new Date().toISOString();
+      // Record max frame id before the batch. createIFrame dedups by content,
+      // so a "not new" frame returns an older id. id-based detection is
+      // format-agnostic; comparing timestamps here would trip on the mismatch
+      // between JS's ISO format and SQLite's space-separated datetime('now').
+      const rawDb = getPersonalDb().getDatabase();
+      const maxBefore =
+        (rawDb.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM memory_frames').get() as { m: number }).m;
 
       for (const item of items) {
         // Build a summary from the conversation
@@ -109,9 +115,9 @@ export function registerHarvestTools(server: McpServer): void {
           'import',
         );
 
-        // Frames created during this batch have created_at >= batchStartIso.
-        // Dedup hits return the original frame whose created_at is older.
-        const isNew = frame.created_at >= batchStartIso;
+        // Frames created during this batch have id > maxBefore.
+        // Dedup hits return the original frame whose id is older.
+        const isNew = frame.id > maxBefore;
 
         if (isNew) {
           framesCreated++;

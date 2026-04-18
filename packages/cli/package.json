@@ -1,0 +1,30 @@
+{
+  "name": "@hive-mind/cli",
+  "version": "0.1.0",
+  "description": "Command-line tools for hive-mind: recall, save, harvest, compile-wiki, maintenance. Designed to run from SessionStart/Stop hooks and nightly cron.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "hive-mind-cli": "dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@hive-mind/core": "*",
+    "@hive-mind/wiki-compiler": "*"
+  },
+  "engines": { "node": ">=20" },
+  "publishConfig": { "access": "public" }
+}
