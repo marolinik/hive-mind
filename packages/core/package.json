@@ -1,10 +1,25 @@
 {
   "name": "@hive-mind/core",
   "version": "0.1.0",
-  "description": "Memory substrate: FrameStore, HybridSearch, KnowledgeGraph, IdentityLayer, AwarenessLayer",
+  "description": "Memory substrate: FrameStore, HybridSearch, KnowledgeGraph, IdentityLayer, AwarenessLayer, harvest pipeline",
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "scripts": { "build": "tsc" }
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "sqlite-vec": "^0.1.7-alpha.2"
+  },
+  "publishConfig": { "access": "public" }
 }

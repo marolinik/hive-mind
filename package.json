@@ -4,13 +4,25 @@
   "description": "Local-first AI memory system with semantic search, knowledge graph, wiki compiler, and MCP server. Compatible with Claude Code, Codex, Hermes, and any MCP client.",
   "license": "Apache-2.0",
   "type": "module",
+  "private": true,
   "workspaces": ["packages/*"],
   "engines": { "node": ">=20" },
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "tsc --build",
+    "build:clean": "tsc --build --clean",
     "test": "vitest run",
-    "clean": "rm -rf packages/*/dist"
+    "test:watch": "vitest",
+    "lint": "eslint packages/*/src --ext .ts",
+    "typecheck": "tsc --build --noEmit",
+    "clean": "tsc --build --clean && rm -rf packages/*/dist"
   },
   "repository": { "type": "git", "url": "https://github.com/egzakta/hive-mind" },
-  "keywords": ["memory", "ai", "mcp", "knowledge-graph", "wiki", "local-first", "semantic-search"]
+  "keywords": ["memory", "ai", "mcp", "knowledge-graph", "wiki", "local-first", "semantic-search"],
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^2.1.8",
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.8"
+  }
 }
