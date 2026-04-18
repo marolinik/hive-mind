@@ -12,7 +12,13 @@
 //   Wave 2C (hybrid search + scoring)    — HybridSearch (RRF fusion over FTS5 +
 //                                          sqlite-vec, k=60) and a 4-profile
 //                                          personalization scoring layer.
-// Subsequent waves add KnowledgeGraph, IdentityLayer, AwarenessLayer, and the
+//   Wave 2D (knowledge + concepts)       — KnowledgeGraph (bitemporal entities +
+//                                          relations, typed BFS traversal),
+//                                          Ontology validator, entity-name
+//                                          normalization/dedup utilities, and
+//                                          ConceptTracker (spaced-repetition
+//                                          mastery on 1-5 scale).
+// Subsequent waves add IdentityLayer, AwarenessLayer, reconcile, and the
 // harvest pipeline. See EXTRACTION.md in the repository root for the full
 // roadmap.
 
@@ -35,6 +41,21 @@ export type {
 // Sessions
 export { SessionStore } from './mind/sessions.js';
 export type { Session } from './mind/sessions.js';
+
+// Knowledge graph
+export { KnowledgeGraph } from './mind/knowledge.js';
+export type {
+  Entity,
+  Relation,
+  EntityTypeSchema,
+  ValidationSchema,
+} from './mind/knowledge.js';
+export { Ontology, validateEntity } from './mind/ontology.js';
+export type { EntitySchema, ValidationResult } from './mind/ontology.js';
+export { normalizeEntityName, findDuplicates } from './mind/entity-normalizer.js';
+export type { EntityRef } from './mind/entity-normalizer.js';
+export { ConceptTracker, CONCEPT_MASTERY_TABLE_SQL } from './mind/concept-tracker.js';
+export type { ConceptEntry, ConceptUpdate } from './mind/concept-tracker.js';
 
 // Hybrid search + scoring
 export { HybridSearch } from './mind/search.js';
