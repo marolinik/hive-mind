@@ -9,9 +9,12 @@
 //   Wave 2B (frames + sessions)          — FrameStore (I/P/B memory frames with
 //                                          FTS+vec sync, dedup, compaction) and
 //                                          SessionStore (GOP session lifecycle).
-// Subsequent waves add HybridSearch, KnowledgeGraph, IdentityLayer,
-// AwarenessLayer, and the harvest pipeline. See EXTRACTION.md in the repository
-// root for the full roadmap.
+//   Wave 2C (hybrid search + scoring)    — HybridSearch (RRF fusion over FTS5 +
+//                                          sqlite-vec, k=60) and a 4-profile
+//                                          personalization scoring layer.
+// Subsequent waves add KnowledgeGraph, IdentityLayer, AwarenessLayer, and the
+// harvest pipeline. See EXTRACTION.md in the repository root for the full
+// roadmap.
 
 export const VERSION = '0.1.0';
 
@@ -32,6 +35,24 @@ export type {
 // Sessions
 export { SessionStore } from './mind/sessions.js';
 export type { Session } from './mind/sessions.js';
+
+// Hybrid search + scoring
+export { HybridSearch } from './mind/search.js';
+export type { SearchOptions, SearchResult } from './mind/search.js';
+export {
+  SCORING_PROFILES,
+  computeTemporalScore,
+  computePopularityScore,
+  computeContextualScore,
+  computeImportanceScore,
+  computeRelevance,
+} from './mind/scoring.js';
+export type {
+  ScoringProfile,
+  ScoringWeights,
+  ScoringContext,
+  ScoredResult,
+} from './mind/scoring.js';
 
 // Embedding providers
 export type { Embedder } from './mind/embeddings.js';
