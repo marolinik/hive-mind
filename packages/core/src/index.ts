@@ -82,6 +82,16 @@ export * from './harvest/index.js';
 export { scanForInjection } from './injection-scanner.js';
 export type { ScanResult } from './injection-scanner.js';
 
+// Workspace management (Wave 5A).
+// On-disk layout: {baseDir}/workspaces/{id}/{workspace.json, workspace.mind,
+// sessions/} plus a {baseDir}/workspaces-meta.json pointer for the default
+// workspace. `MultiMindCache` is an LRU cache of open MindDB handles keyed
+// by workspace id, typically wired with `getMindPath` from WorkspaceManager.
+export { WorkspaceManager } from './workspace-manager.js';
+export type { WorkspaceConfig, CreateWorkspaceOptions } from './workspace-manager.js';
+export { MultiMindCache } from './multi-mind-cache.js';
+export type { MultiMindCacheConfig } from './multi-mind-cache.js';
+
 // Index reconciliation (maintenance helpers)
 export {
   reconcileFtsIndex,
