@@ -12,13 +12,13 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
   "scripts": {
     "build": "tsc --build",
     "clean": "tsc --build --clean"
   },
   "dependencies": {
-    "@hive-mind/core": "*"
+    "@hive-mind/core": "0.1.0"
   },
   "peerDependencies": {
     "@anthropic-ai/sdk": "^0.24.0"
@@ -29,5 +29,23 @@
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.24.0"
   },
-  "publishConfig": { "access": "public" }
+  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/egzakta/hive-mind.git",
+    "directory": "packages/wiki-compiler"
+  },
+  "homepage": "https://github.com/egzakta/hive-mind/tree/master/packages/wiki-compiler#readme",
+  "bugs": { "url": "https://github.com/egzakta/hive-mind/issues" },
+  "author": "Egzakta Group d.o.o. <hello@egzakta.com> (https://egzakta.com)",
+  "keywords": [
+    "wiki",
+    "memory",
+    "knowledge-graph",
+    "llm",
+    "ai",
+    "synthesis",
+    "hive-mind"
+  ],
+  "engines": { "node": ">=20" }
 }

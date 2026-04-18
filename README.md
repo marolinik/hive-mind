@@ -1,7 +1,11 @@
 # hive-mind -- Local-First AI Memory System
 
+[![CI](https://github.com/egzakta/hive-mind/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/egzakta/hive-mind/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![npm version](https://img.shields.io/npm/v/@hive-mind/core.svg)](https://www.npmjs.com/package/@hive-mind/core)
+[![npm: core](https://img.shields.io/npm/v/@hive-mind/core.svg?label=%40hive-mind%2Fcore)](https://www.npmjs.com/package/@hive-mind/core)
+[![npm: wiki-compiler](https://img.shields.io/npm/v/@hive-mind/wiki-compiler.svg?label=%40hive-mind%2Fwiki-compiler)](https://www.npmjs.com/package/@hive-mind/wiki-compiler)
+[![npm: mcp-server](https://img.shields.io/npm/v/@hive-mind/mcp-server.svg?label=%40hive-mind%2Fmcp-server)](https://www.npmjs.com/package/@hive-mind/mcp-server)
+[![npm: cli](https://img.shields.io/npm/v/@hive-mind/cli.svg?label=%40hive-mind%2Fcli)](https://www.npmjs.com/package/@hive-mind/cli)
 [![MCP Compatible](https://img.shields.io/badge/MCP-compatible-green.svg)](https://modelcontextprotocol.io)
 
 Persistent memory, semantic search, knowledge graph, and wiki compiler for AI agents.
@@ -166,6 +170,7 @@ Harvest Sources          Memory Storage              Knowledge Output
 | [`@hive-mind/core`](packages/core) | Memory substrate: FrameStore, HybridSearch, KnowledgeGraph, IdentityLayer, AwarenessLayer, Harvest pipeline |
 | [`@hive-mind/wiki-compiler`](packages/wiki-compiler) | Compile memory frames into interlinked wiki pages with LLM synthesis |
 | [`@hive-mind/mcp-server`](packages/mcp-server) | MCP server exposing all 21 tools for any MCP-compatible AI client |
+| [`@hive-mind/cli`](packages/cli) | Command-line tools: `recall-context`, `save-session`, `harvest-local`, `cognify`, `compile-wiki`, `maintenance` |
 
 ## Memory Model: I/P/B Frames
 
@@ -285,7 +290,7 @@ hive-mind/
 
 Contributions are welcome. Please see the following guidelines:
 
-1. **Fork and branch** -- create a feature branch from `main`
+1. **Fork and branch** -- create a feature branch from `master` (the default branch)
 2. **Test** -- ensure `npm test` passes with 80%+ coverage
 3. **Lint** -- run `npm run lint` before submitting
 4. **Conventional commits** -- use `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`

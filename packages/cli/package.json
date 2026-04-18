@@ -15,16 +15,32 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
   "scripts": {
     "build": "tsc --build",
     "clean": "tsc --build --clean",
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@hive-mind/core": "*",
-    "@hive-mind/wiki-compiler": "*"
+    "@hive-mind/core": "0.1.0",
+    "@hive-mind/wiki-compiler": "0.1.0"
   },
   "engines": { "node": ">=20" },
-  "publishConfig": { "access": "public" }
+  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/egzakta/hive-mind.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/egzakta/hive-mind/tree/master/packages/cli#readme",
+  "bugs": { "url": "https://github.com/egzakta/hive-mind/issues" },
+  "author": "Egzakta Group d.o.o. <hello@egzakta.com> (https://egzakta.com)",
+  "keywords": [
+    "cli",
+    "memory",
+    "hive-mind",
+    "harvest",
+    "wiki-compiler",
+    "ai"
+  ]
 }
