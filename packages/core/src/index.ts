@@ -32,9 +32,23 @@
 //                                          paragraph chunker, LLM prompt
 //                                          templates, HarvestSourceStore, and
 //                                          local dedup (hash + trigram) with
-//                                          contradiction detection. Adapters
-//                                          and pipeline orchestrator follow in
-//                                          3B / 3C.
+//                                          contradiction detection.
+//   Wave 3B (parse-only adapters)        — 9 adapters (ChatGPT / Claude /
+//                                          Gemini / Perplexity / Plaintext /
+//                                          Markdown / URL / PDF / Universal)
+//                                          that turn exports + documents +
+//                                          URLs into UniversalImportItem[].
+//   Wave 3C (pipeline + claude-code)     — ClaudeCodeAdapter (filesystem
+//                                          scanner for ~/.claude/ memory,
+//                                          rules, plans, CLAUDE.md, .mind/),
+//                                          scanForInjection (prompt-injection
+//                                          defense), and HarvestPipeline —
+//                                          the 4-pass orchestrator (Pass 0
+//                                          injection filter, Pass 1 classify,
+//                                          Pass 2 extract, Pass 3 synthesize,
+//                                          Pass 4 local dedup) with batching
+//                                          and a concurrency cap. Harvest
+//                                          extraction is complete after 3C.
 // See EXTRACTION.md in the repository root for the full roadmap.
 
 export const VERSION = '0.1.0';
@@ -57,9 +71,16 @@ export type {
 export { SessionStore } from './mind/sessions.js';
 export type { Session } from './mind/sessions.js';
 
-// Harvest pipeline (Wave 3A foundation: types + chunker + prompts + source
-// store + dedup; adapters and orchestrator added in 3B / 3C).
+// Harvest pipeline (Waves 3A + 3B + 3C): universal types, chunker, prompts,
+// source-tracking store, dedup, 10 adapters (Wave 3B's 9 parse-only + Wave
+// 3C's ClaudeCodeAdapter), and the 4-pass HarvestPipeline orchestrator.
 export * from './harvest/index.js';
+
+// Prompt-injection scanner (shared by harvest pipeline's Pass 0 filter and
+// any caller handling untrusted text — conversation imports, URL fetches,
+// tool output).
+export { scanForInjection } from './injection-scanner.js';
+export type { ScanResult } from './injection-scanner.js';
 
 // Index reconciliation (maintenance helpers)
 export {
