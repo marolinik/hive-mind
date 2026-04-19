@@ -11,6 +11,8 @@ import { runCompileWiki } from './commands/compile-wiki.js';
 import { runMaintenance } from './commands/maintenance.js';
 import { runInit, renderInitResult } from './commands/init.js';
 import { runStatus, renderStatusResult } from './commands/status.js';
+import { runMcpStart } from './commands/mcp-start.js';
+import { runMcpCall, renderMcpCallResult } from './commands/mcp-call.js';
 import type { CliEnv } from './setup.js';
 import type { Importance } from '@hive-mind/core';
 
@@ -141,7 +143,37 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
       return fmt === 'json' ? json(result) : renderStatusResult(result, 'plain');
     }
 
+    case 'mcp-start': {
+      // Long-running. Exits with the child's exit code; this branch only
+      // returns once the MCP server child has stopped.
+      const code = await runMcpStart();
+      process.exit(code);
+    }
+
+    case 'mcp-call': {
+      const tool = (values['tool'] as string | undefined) ?? positionals[0];
+      if (!tool) throw new Error('mcp call requires a tool name (e.g. `mcp call recall_memory`)');
+
+      let parsedArgs: Record<string, unknown> = {};
+      const argsRaw = values['args'] as string | undefined;
+      if (argsRaw) {
+        try {
+          parsedArgs = JSON.parse(argsRaw) as Record<string, unknown>;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          throw new Error(`--args is not valid JSON: ${msg}`);
+        }
+      }
+
+      const result = await runMcpCall({
+        tool,
+        args: parsedArgs,
+        timeoutMs: intArg(values, 'timeout-ms'),
+      });
+      return fmt === 'json' ? json(result) : renderMcpCallResult(result, 'plain');
+    }
+
     default:
-      throw new Error(`Unknown subcommand: "${subcommand}". Try: init, status, recall-context, save-session, harvest-local, cognify, compile-wiki, maintenance`);
+      throw new Error(`Unknown subcommand: "${subcommand}". Try: init, status, recall-context, save-session, harvest-local, cognify, compile-wiki, maintenance, mcp start, mcp call <tool>`);
   }
 }

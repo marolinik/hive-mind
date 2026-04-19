@@ -6,6 +6,8 @@
  * Subcommands:
  *   init                           Scaffold data dir + personal.mind (idempotent)
  *   status                         Show frame/entity counts + last activity
+ *   mcp start                      Run the MCP server in the foreground
+ *   mcp call <tool> [--args JSON]  Invoke one MCP tool + print the result
  *   recall-context "<query>"       Query the personal mind and print hits
  *   save-session [--file P]        Persist stdin or --file as a memory frame
  *   harvest-local --source S --path P  Import conversations from disk
@@ -24,14 +26,23 @@ import { dispatch, type DispatchArgs } from './dispatch.js';
 
 function parseRootArgs(argv: string[]): DispatchArgs | null {
   // Split "subcommand" out before parseArgs so the subcommand name does
-  // not collide with `--` flags.
-  const [subcommand, ...rest] = argv;
-  if (!subcommand || subcommand === '--help' || subcommand === '-h') {
+  // not collide with `--` flags. Two-word subcommands `mcp start` and
+  // `mcp call <tool>` collapse to `mcp-start` / `mcp-call` so dispatch
+  // can route with a single switch.
+  const [first, ...rest] = argv;
+  if (!first || first === '--help' || first === '-h') {
     return null;
   }
 
+  let subcommand = first;
+  let afterSubcommand = rest;
+  if (first === 'mcp' && rest.length > 0) {
+    subcommand = `mcp-${rest[0]}`;
+    afterSubcommand = rest.slice(1);
+  }
+
   const { values, positionals } = parseArgs({
-    args: rest,
+    args: afterSubcommand,
     allowPositionals: true,
     strict: false,
     options: {
@@ -56,6 +67,9 @@ function parseRootArgs(argv: string[]): DispatchArgs | null {
       'max-deprecated-age-days': { type: 'string' },
       'session-label': { type: 'string' },
       'importance': { type: 'string' },
+      'tool': { type: 'string' },
+      'args': { type: 'string' },
+      'timeout-ms': { type: 'string' },
     },
   });
 
@@ -69,6 +83,8 @@ function printHelp(): void {
     'Subcommands:',
     '  init                         Scaffold data dir + personal.mind (idempotent)',
     '  status                       Show frame/entity counts + last activity',
+    '  mcp start                    Run the hive-mind MCP server (stdio)',
+    '  mcp call <tool> [--args J]   Invoke one MCP tool and print the result',
     '  recall-context "<query>"     Search the personal mind and print hits',
     '  save-session --file PATH     Persist a session summary as a memory frame',
     '  harvest-local --source S --path P   Import local AI tool exports',

@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import { openPersonalMind, type CliEnv } from './setup.js';
 import { dispatch } from './dispatch.js';
+import { runMcpCall } from './commands/mcp-call.js';
 
 describe('cli dispatch', () => {
   let dataDir: string;
@@ -306,5 +308,135 @@ describe('cli dispatch', () => {
     const parsed = JSON.parse(out!) as { lastFrame: { preview: string } };
     expect(parsed.lastFrame.preview.length).toBeLessThanOrEqual(80);
     expect(parsed.lastFrame.preview.endsWith('…')).toBe(true);
+  });
+
+  it('mcp-call rejects missing tool name', async () => {
+    await expect(dispatch({
+      subcommand: 'mcp-call',
+      values: {},
+      positionals: [],
+    })).rejects.toThrow(/tool name/);
+  });
+
+  it('mcp-call rejects invalid --args JSON', async () => {
+    await expect(dispatch({
+      subcommand: 'mcp-call',
+      values: { args: '{not json' },
+      positionals: ['recall_memory'],
+    })).rejects.toThrow(/not valid JSON/);
+  });
+});
+
+/**
+ * MCP-call tests using the `transport` override so we never spawn a real
+ * child process. These verify the JSON-RPC handshake + response matching
+ * logic, not the server itself (the smoke script covers the real server).
+ */
+describe('runMcpCall (transport mock)', () => {
+  function makeMockTransport(responses: Array<Record<string, unknown>>) {
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    let killed = false;
+
+    // Watch stdin for requests and emit canned responses for each id.
+    let buffer = '';
+    stdin.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString('utf-8');
+      let idx = buffer.indexOf('\n');
+      while (idx !== -1) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (line) {
+          try {
+            const req = JSON.parse(line) as { id?: number; method?: string };
+            if (typeof req.id === 'number') {
+              const match = responses.find((r) => r['id'] === req.id);
+              if (match) {
+                stdout.write(JSON.stringify(match) + '\n');
+              }
+            }
+          } catch { /* ignore parse errors */ }
+        }
+        idx = buffer.indexOf('\n');
+      }
+    });
+
+    return () => ({
+      stdin,
+      stdout,
+      kill: () => { killed = true; stdin.end(); stdout.end(); },
+      exitPromise: Promise.resolve(killed ? 0 : 0),
+    });
+  }
+
+  it('runs initialize + tools/call and returns the content array', async () => {
+    const transport = makeMockTransport([
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          serverInfo: { name: 'mock', version: '0.0.1' },
+        },
+      },
+      {
+        jsonrpc: '2.0',
+        id: 2,
+        result: {
+          content: [{ type: 'text', text: 'hello from the mock tool' }],
+          isError: false,
+        },
+      },
+    ]);
+
+    const result = await runMcpCall({
+      tool: 'recall_memory',
+      args: { query: 'hello' },
+      transport,
+      timeoutMs: 2000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.tool).toBe('recall_memory');
+    expect(result.isError).toBe(false);
+    expect(result.content).toHaveLength(1);
+    expect(result.content![0].text).toContain('hello from the mock tool');
+  });
+
+  it('surfaces MCP error responses', async () => {
+    const transport = makeMockTransport([
+      { jsonrpc: '2.0', id: 1, result: { protocolVersion: '2024-11-05', capabilities: {} } },
+      { jsonrpc: '2.0', id: 2, error: { code: -32602, message: 'Unknown tool: teleport' } },
+    ]);
+
+    const result = await runMcpCall({
+      tool: 'teleport',
+      transport,
+      timeoutMs: 2000,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('Unknown tool: teleport');
+  });
+
+  it('times out when the server never responds', async () => {
+    // Transport that emits no responses.
+    const transport = makeMockTransport([]);
+
+    const result = await runMcpCall({
+      tool: 'recall_memory',
+      transport,
+      timeoutMs: 100,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/timed out/);
+  });
+
+  it('rejects missing tool at the entry point', async () => {
+    const result = await runMcpCall({ tool: '', timeoutMs: 100 });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/tool name is required/);
   });
 });

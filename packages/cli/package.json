@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@hive-mind/core": "0.1.0",
+    "@hive-mind/mcp-server": "0.1.0",
     "@hive-mind/wiki-compiler": "0.1.0"
   },
   "engines": { "node": ">=20" },
