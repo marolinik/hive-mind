@@ -4,14 +4,11 @@
 # Goal: a stranger can clone the repo, run this script, and see the MCP server
 # start + the CLI read from and write to a throwaway workspace in < 5 minutes.
 #
-# Scope note (v0.1.0):
-#   The brief called for persona-friendly `hive-mind init`, `hive-mind status`,
-#   and `hive-mind mcp start / call` subcommands. Those do not exist in v0.1.0.
-#   This script exercises the actual surface:
-#     recall-context / save-session / harvest-local / cognify / compile-wiki / maintenance
-#   plus a stdio handshake with the MCP server binary.
-#
-#   Adding the persona-facing commands is tracked for v0.1.x as a CLI gap.
+# Scope note (v0.1.x):
+#   Persona-facing commands (`init`, `status`, `mcp start`, `mcp call`) shipped
+#   in v0.1.x — this script exercises the full surface:
+#     init / status / save-session / recall-context / mcp call
+#   plus a direct stdio handshake with the MCP server binary.
 
 set -euo pipefail
 
@@ -79,10 +76,15 @@ SCRATCH="$(mktemp -d -t hive-mind-smoke-XXXXXX)"
 trap 'rm -rf "$SCRATCH"' EXIT
 ok "scratch workspace: $SCRATCH"
 
-export HIVE_MIND_HOME="$SCRATCH"
+export HIVE_MIND_DATA_DIR="$SCRATCH"
 export HIVE_MIND_WORKSPACE="smoke"
 
-# ---- CLI smoke: save -> recall ----------------------------------------------
+# ---- CLI smoke: init -> save -> recall -> status ----------------------------
+
+step "CLI: init a fresh workspace"
+node "$CLI_BIN" init --json \
+  || fail "init failed"
+ok "init succeeded"
 
 step "CLI: save a session transcript"
 SAMPLE="$SCRATCH/sample-session.md"
@@ -103,6 +105,14 @@ RECALL_OUT=$(node "$CLI_BIN" recall-context "TypeScript preferences" --limit 5 -
 echo "$RECALL_OUT" | head -c 400
 echo
 ok "recall-context returned results"
+
+step "CLI: status reports frame count"
+STATUS_OUT=$(node "$CLI_BIN" status --json) \
+  || fail "status failed"
+if ! echo "$STATUS_OUT" | grep -q '"frames":'; then
+  fail "status output missing frames count: ${STATUS_OUT:0:200}"
+fi
+ok "status returned a summary"
 
 # ---- MCP handshake ----------------------------------------------------------
 
