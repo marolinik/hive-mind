@@ -214,4 +214,97 @@ describe('cli dispatch', () => {
       env,
     })).rejects.toThrow(/Unknown subcommand/);
   });
+
+  it('init on a populated env reports the existing mind', async () => {
+    const out = await dispatch({
+      subcommand: 'init',
+      values: { json: true },
+      positionals: [],
+      env,
+    });
+    const parsed = JSON.parse(out!) as {
+      dataDir: string;
+      personalMindPath: string;
+      personalMindCreated: boolean;
+      dataDirCreated: boolean;
+    };
+    expect(parsed.dataDir).toBe(dataDir);
+    expect(parsed.personalMindPath).toContain('personal.mind');
+    // Already opened by the beforeEach hook → should be reported as existing.
+    expect(parsed.personalMindCreated).toBe(false);
+    expect(parsed.dataDirCreated).toBe(false);
+  });
+
+  it('init plain-text output lists next-step commands', async () => {
+    const out = await dispatch({
+      subcommand: 'init',
+      values: {},
+      positionals: [],
+      env,
+    });
+    expect(out).toContain('Personal mind exists');
+    expect(out).toContain('hive-mind-cli status');
+    expect(out).toContain('hive-mind-cli recall-context');
+  });
+
+  it('status --json reports seeded frame count and entities', async () => {
+    // Cognify first so the entity-count column is non-zero.
+    await dispatch({
+      subcommand: 'cognify',
+      values: { json: true },
+      positionals: [],
+      env,
+    });
+
+    const out = await dispatch({
+      subcommand: 'status',
+      values: { json: true },
+      positionals: [],
+      env,
+    });
+    const parsed = JSON.parse(out!) as {
+      dataDir: string;
+      personalMindExists: boolean;
+      frames: number;
+      entities: number;
+      relations: number;
+      lastFrame: { id: number; source: string; preview: string } | null;
+    };
+    expect(parsed.personalMindExists).toBe(true);
+    expect(parsed.frames).toBeGreaterThanOrEqual(3);
+    expect(parsed.entities).toBeGreaterThan(0);
+    expect(parsed.lastFrame).not.toBeNull();
+    expect(parsed.lastFrame?.source).toBe('user_stated');
+    expect(parsed.lastFrame?.preview.length).toBeGreaterThan(0);
+  });
+
+  it('status plain-text renders a human-readable summary', async () => {
+    const out = await dispatch({
+      subcommand: 'status',
+      values: {},
+      positionals: [],
+      env,
+    });
+    expect(out).toContain('hive-mind status');
+    expect(out).toContain('frames:');
+    expect(out).toContain('entities:');
+    expect(out).toContain('relations:');
+    expect(out).toContain('last frame:');
+  });
+
+  it('status truncates long frame content in preview', async () => {
+    // Seed a long frame so preview truncation is exercised.
+    const longContent = 'This is a deliberately long frame body. '.repeat(10);
+    env.frames.createIFrame('g-cli', longContent, 'normal', 'user_stated');
+
+    const out = await dispatch({
+      subcommand: 'status',
+      values: { json: true },
+      positionals: [],
+      env,
+    });
+    const parsed = JSON.parse(out!) as { lastFrame: { preview: string } };
+    expect(parsed.lastFrame.preview.length).toBeLessThanOrEqual(80);
+    expect(parsed.lastFrame.preview.endsWith('…')).toBe(true);
+  });
 });

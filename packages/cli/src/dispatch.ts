@@ -9,6 +9,8 @@ import { runHarvestLocal, type HarvestSource } from './commands/harvest-local.js
 import { runCognify } from './commands/cognify.js';
 import { runCompileWiki } from './commands/compile-wiki.js';
 import { runMaintenance } from './commands/maintenance.js';
+import { runInit, renderInitResult } from './commands/init.js';
+import { runStatus, renderStatusResult } from './commands/status.js';
 import type { CliEnv } from './setup.js';
 import type { Importance } from '@hive-mind/core';
 
@@ -129,7 +131,17 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
       return lines.join('\n');
     }
 
+    case 'init': {
+      const result = await runInit({ env });
+      return fmt === 'json' ? json(result) : renderInitResult(result, 'plain');
+    }
+
+    case 'status': {
+      const result = await runStatus({ env });
+      return fmt === 'json' ? json(result) : renderStatusResult(result, 'plain');
+    }
+
     default:
-      throw new Error(`Unknown subcommand: "${subcommand}". Try: recall-context, save-session, harvest-local, cognify, compile-wiki, maintenance`);
+      throw new Error(`Unknown subcommand: "${subcommand}". Try: init, status, recall-context, save-session, harvest-local, cognify, compile-wiki, maintenance`);
   }
 }

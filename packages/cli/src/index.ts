@@ -4,6 +4,8 @@
  * hive-mind-cli — command-line tools for the hive-mind memory system.
  *
  * Subcommands:
+ *   init                           Scaffold data dir + personal.mind (idempotent)
+ *   status                         Show frame/entity counts + last activity
  *   recall-context "<query>"       Query the personal mind and print hits
  *   save-session [--file P]        Persist stdin or --file as a memory frame
  *   harvest-local --source S --path P  Import conversations from disk
@@ -65,6 +67,8 @@ function printHelp(): void {
     'Usage: hive-mind-cli <subcommand> [options]',
     '',
     'Subcommands:',
+    '  init                         Scaffold data dir + personal.mind (idempotent)',
+    '  status                       Show frame/entity counts + last activity',
     '  recall-context "<query>"     Search the personal mind and print hits',
     '  save-session --file PATH     Persist a session summary as a memory frame',
     '  harvest-local --source S --path P   Import local AI tool exports',
