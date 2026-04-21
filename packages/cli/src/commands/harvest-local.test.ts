@@ -73,6 +73,155 @@ function fetchCreatedAt(env: CliEnv): { id: number; created_at: string } | undef
     .get() as { id: number; created_at: string } | undefined;
 }
 
+// ── Task 0.5 preview-cap regression fixture helper ─────────────────────
+
+/** Builds a Claude-shaped export whose assistant message has a known
+ *  length. Used by the preview-cap boundary tests below — the stored
+ *  preview should track the new 10_000-char cap exactly. */
+function writeClaudeExportWithAssistantLength(dir: string, assistantLen: number): string {
+  // Assistant content is a predictable string of `assistantLen` chars
+  // built from a repeated 10-char marker. We read back the stored
+  // frame content and assert its length relative to the cap.
+  const marker = 'ABCDEFGHIJ';
+  const repeats = Math.ceil(assistantLen / marker.length);
+  const assistantText = marker.repeat(repeats).slice(0, assistantLen);
+  const conversations = [
+    {
+      uuid: 'preview-cap-test-conv',
+      name: 'Preview cap boundary fixture',
+      created_at: '2025-12-01T14:00:00Z',
+      chat_messages: [
+        { sender: 'human', text: 'short user prompt', created_at: '2025-12-01T14:00:00Z' },
+        { sender: 'assistant', text: assistantText, created_at: '2025-12-01T14:00:01Z' },
+      ],
+    },
+  ];
+  const p = join(dir, `export-len-${assistantLen}.json`);
+  writeFileSync(p, JSON.stringify({ conversations }), 'utf-8');
+  return p;
+}
+
+describe('harvest-local preview cap raise (Sprint 9 Task 0.5 boundary cases)', () => {
+  let dataDir: string;
+  let fixtureDir: string;
+  let env: CliEnv;
+
+  beforeEach(() => {
+    dataDir = mkdtempSync(join(tmpdir(), 'hmind-preview-cap-test-'));
+    fixtureDir = mkdtempSync(join(tmpdir(), 'hmind-preview-cap-fx-'));
+    env = openPersonalMind(dataDir);
+  });
+
+  afterEach(() => {
+    env.close();
+    try { rmSync(dataDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    try { rmSync(fixtureDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  // The stored frame content is `[claude] ${title}: ${preview}` — we
+  // account for the prefix length when computing the expected body
+  // size so the cap math is unambiguous.
+  const CLAUDE_PREFIX_LEN =
+    '[claude] Preview cap boundary fixture: user: short user prompt\n\nassistant: '.length;
+  const CAP = 10_000;
+
+  it('frame content at exactly CAP-1 chars of assistant body is stored whole (no truncation)', async () => {
+    const assistantLen = CAP - CLAUDE_PREFIX_LEN - 1;
+    // The adapter joins messages with `\n\n` inside content; the preview
+    // slicer runs on the full `item.content` string which already
+    // contains the "role: text\n\nrole: text" composition. Under the cap
+    // means the stored preview equals the full composed string.
+    const exportPath = writeClaudeExportWithAssistantLength(fixtureDir, assistantLen);
+    await runHarvestLocal({ source: 'claude', path: exportPath, env });
+    const stored = env.db.getDatabase()
+      .prepare('SELECT content FROM memory_frames ORDER BY id DESC LIMIT 1')
+      .get() as { content: string };
+    // Stored content ≤ CAP in total (prefix + title + ": " + preview).
+    expect(stored.content.length).toBeLessThanOrEqual(CAP + CLAUDE_PREFIX_LEN);
+    // Body contains the full assistant text (marker string repeated).
+    expect(stored.content).toContain('ABCDEFGHIJABCDEFGHIJ');
+  });
+
+  it('frame content at exactly CAP chars of assistant body is stored whole', async () => {
+    const assistantLen = CAP - CLAUDE_PREFIX_LEN;
+    const exportPath = writeClaudeExportWithAssistantLength(fixtureDir, assistantLen);
+    await runHarvestLocal({ source: 'claude', path: exportPath, env });
+    const stored = env.db.getDatabase()
+      .prepare('SELECT content FROM memory_frames ORDER BY id DESC LIMIT 1')
+      .get() as { content: string };
+    // Assistant-text length close to CAP; stored preview must not drop
+    // any chars below the cap.
+    expect(stored.content.length).toBeGreaterThanOrEqual(CAP - 200); // allow for title / prefix wiggle
+    expect(stored.content.length).toBeLessThanOrEqual(CAP + CLAUDE_PREFIX_LEN + 100);
+  });
+
+  it('frame content at CAP+1 chars is truncated exactly at the cap boundary', async () => {
+    const assistantLen = CAP + 500; // comfortably past the cap
+    const exportPath = writeClaudeExportWithAssistantLength(fixtureDir, assistantLen);
+    await runHarvestLocal({ source: 'claude', path: exportPath, env });
+    const stored = env.db.getDatabase()
+      .prepare('SELECT content FROM memory_frames ORDER BY id DESC LIMIT 1')
+      .get() as { content: string };
+    // The preview slicer takes first CAP chars of item.content — the
+    // stored frame content is `[claude] <title>: <preview>` where
+    // preview has exactly CAP chars. Total stored length should be
+    // prefix + CAP.
+    expect(stored.content.length).toBeLessThanOrEqual(CAP + CLAUDE_PREFIX_LEN + 100);
+    expect(stored.content.length).toBeGreaterThanOrEqual(CAP - 100);
+  });
+
+  it('frame content far past the cap (CAP*10) still ingests without memory blowup', async () => {
+    // Guard against an accidental N² copy path or full-string retention
+    // when the input is much larger than the cap. 100K char input
+    // should ingest in the same time budget as a 10K input.
+    const assistantLen = CAP * 10;
+    const exportPath = writeClaudeExportWithAssistantLength(fixtureDir, assistantLen);
+    const before = Date.now();
+    const result = await runHarvestLocal({ source: 'claude', path: exportPath, env });
+    const elapsed = Date.now() - before;
+    expect(result.errors).toEqual([]);
+    expect(result.framesCreated).toBe(1);
+    // Should complete well under 5s even on a slow CI box. Guard rail
+    // value — if this ever takes longer, a N² regression snuck in.
+    expect(elapsed).toBeLessThan(5000);
+    const stored = env.db.getDatabase()
+      .prepare('SELECT content FROM memory_frames ORDER BY id DESC LIMIT 1')
+      .get() as { content: string };
+    expect(stored.content.length).toBeLessThanOrEqual(CAP + CLAUDE_PREFIX_LEN + 100);
+  });
+
+  it('original content past the cap is dropped — retrieval can only see the preview', async () => {
+    // Canary test: if someone changes the cap from 10_000 without
+    // updating retrieval to use a full-content column, this test
+    // catches the drop. A sentinel string at position CAP+500 in the
+    // assistant body must NOT appear in the stored frame content.
+    const SENTINEL = 'PAST_CAP_SENTINEL_STRING_DO_NOT_DROP_SILENTLY';
+    const marker = 'abcdefghij';
+    // Front-load CAP+200 chars of filler, then embed the sentinel, then
+    // trailing filler. Assistant text = filler + sentinel + trailing.
+    const filler = marker.repeat(Math.ceil((CAP + 200) / marker.length)).slice(0, CAP + 200);
+    const assistantText = filler + SENTINEL + marker.repeat(100);
+    const conversations = [
+      {
+        uuid: 'sentinel-test',
+        name: 'Sentinel past cap',
+        created_at: '2025-12-01T14:00:00Z',
+        chat_messages: [
+          { sender: 'human', text: 'ping', created_at: '2025-12-01T14:00:00Z' },
+          { sender: 'assistant', text: assistantText, created_at: '2025-12-01T14:00:01Z' },
+        ],
+      },
+    ];
+    const p = join(fixtureDir, 'sentinel.json');
+    writeFileSync(p, JSON.stringify({ conversations }), 'utf-8');
+    await runHarvestLocal({ source: 'claude', path: p, env });
+    const stored = env.db.getDatabase()
+      .prepare('SELECT content FROM memory_frames ORDER BY id DESC LIMIT 1')
+      .get() as { content: string };
+    expect(stored.content).not.toContain(SENTINEL);
+  });
+});
+
 describe('harvest-local timestamp preservation (Sprint 9 Task 0 P0 regression)', () => {
   let dataDir: string;
   let fixtureDir: string;

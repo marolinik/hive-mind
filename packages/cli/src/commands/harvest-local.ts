@@ -147,7 +147,22 @@ export async function runHarvestLocal(options: HarvestLocalOptions): Promise<Har
     let timestampFallbacks = 0;
 
     for (const item of items) {
-      const preview = item.content.slice(0, 2000);
+      // Sprint 9 Task 0.5: preview cap raised from 2000 → 10_000 chars.
+      // Rationale: the 2000-char cap surfaced as the dominant secondary
+      // failure mode after the Task 0 timestamp fix (Stage 0 re-run on
+      // 2026-04-21 produced Tier 3 FAIL on Q1 because the detailed
+      // editorial analysis sat past the 2000-char window on the
+      // correctly-retrieved December 2025 frames). 10_000 is the
+      // "option (a) simple raise" target from PM response §2.1 —
+      // cheapest fix that unblocks extractive Q&A on real Claude
+      // export sessions (median Marko-side session ~15K chars opening;
+      // 10K covers the session setup + editor-persona context + first
+      // substantive assistant response, which is where the dated
+      // structural elements live). Option (b) content-column
+      // extension and option (c) rank-warranted expansion remain
+      // queued for Sprint 10+ if this raise leaves residual gaps.
+      const PREVIEW_CAP_CHARS = 10_000;
+      const preview = item.content.slice(0, PREVIEW_CAP_CHARS);
       const content = item.title
         ? `[${item.source}] ${item.title}: ${preview}`
         : `[${item.source}] ${preview}`;
