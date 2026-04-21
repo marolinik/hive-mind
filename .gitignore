@@ -9,3 +9,14 @@ coverage/
 .env.local
 .vscode/
 .idea/
+
+# Privacy — real Claude.ai export bundles dropped into test-fixtures/ for
+# local-only integration testing. Synthetic fixtures for unit tests are
+# authored inline in *.test.ts files (see claude-adapter.test.ts). Real
+# export zips + their extracted JSON shapes must never reach the remote.
+test-fixtures/*.zip
+test-fixtures/**/conversations.json
+test-fixtures/**/projects.json
+test-fixtures/**/memories.json
+test-fixtures/**/users.json
+test-fixtures/**/design_chats/
