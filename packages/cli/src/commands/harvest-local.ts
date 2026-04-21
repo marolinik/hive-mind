@@ -17,6 +17,17 @@ import {
 } from '@hive-mind/core';
 import { openPersonalMind, type CliEnv } from '../setup.js';
 
+/** Narrower ISO-8601 validator than `Date.parse` alone — we require the
+ *  `T` separator and a timezone suffix so downstream range queries on
+ *  `created_at` aren't corrupted by "mostly ISO" shapes ("2024-03-01",
+ *  "2024/03/01 11:00:00") that Date.parse will happily accept. */
+function isIsoTimestamp(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/.test(value)) {
+    return false;
+  }
+  return Number.isFinite(Date.parse(value));
+}
+
 export type HarvestSource = 'chatgpt' | 'claude' | 'claude-code' | 'gemini' | 'universal';
 
 export interface HarvestLocalOptions {
@@ -133,6 +144,7 @@ export async function runHarvestLocal(options: HarvestLocalOptions): Promise<Har
 
     let framesCreated = 0;
     let duplicatesSkipped = 0;
+    let timestampFallbacks = 0;
 
     for (const item of items) {
       const preview = item.content.slice(0, 2000);
@@ -140,9 +152,44 @@ export async function runHarvestLocal(options: HarvestLocalOptions): Promise<Har
         ? `[${item.source}] ${item.title}: ${preview}`
         : `[${item.source}] ${preview}`;
 
-      const frame = env.frames.createIFrame(session.gop_id, content, 'normal', 'import');
+      // Preserve the original source timestamp (e.g. Claude `create_time`,
+      // ChatGPT `created_at`) on the resulting frame so downstream
+      // date-scoped retrieval has a valid temporal anchor. Every adapter
+      // already surfaces `item.timestamp` on the UniversalImportItem;
+      // prior to this fix the harvest path discarded it and
+      // `memory_frames.created_at` defaulted to ingest wall-clock, which
+      // made questions like "what happened in December 2025" unanswerable
+      // against frames harvested in April 2026.
+      //
+      // Fallback is explicit, never silent:
+      //   - valid ISO-8601 string → passed through to createIFrame
+      //   - null / undefined / malformed → fallback to NOW() via schema
+      //     default + console.warn that names the adapter source and
+      //     item id so Wave-3D adapter reviews can trace the gap.
+      const providedTimestamp = typeof item.timestamp === 'string' ? item.timestamp : undefined;
+      const useProvidedTs = providedTimestamp !== undefined && isIsoTimestamp(providedTimestamp);
+      if (!useProvidedTs) {
+        timestampFallbacks++;
+        console.warn(
+          `[harvest-local] missing timestamp — falling back to NOW() for item ` +
+          `source=${item.source} id=${item.id}${providedTimestamp !== undefined ? ` (invalid input: "${providedTimestamp}")` : ''}`,
+        );
+      }
+
+      const frame = env.frames.createIFrame(
+        session.gop_id,
+        content,
+        'normal',
+        'import',
+        useProvidedTs ? providedTimestamp : null,
+      );
       if (frame.id > maxBefore) framesCreated++;
       else duplicatesSkipped++;
+    }
+    if (timestampFallbacks > 0) {
+      errors.push(
+        `timestamp fallback applied to ${timestampFallbacks} item(s); see warn logs for details`,
+      );
     }
 
     // Track in the harvest source store for later "harvest_sources" listing.

@@ -65,6 +65,52 @@ describe('FrameStore', () => {
     expect(state.pframes.map((p) => p.content)).toEqual(['delta 1', 'delta 2']);
   });
 
+  it('createIFrame honors a valid ISO-8601 createdAt override', () => {
+    // Sprint 9 Task 0 regression: the harvest path depends on this
+    // createdAt override to preserve original source timestamps.
+    const ts = '2025-12-01T14:32:00Z';
+    const f = frames.createIFrame('gop-test', 'harvested content', 'normal', 'import', ts);
+    expect(f.created_at).toBe(ts);
+    expect(f.last_accessed).toBe(ts);
+  });
+
+  it('createIFrame with undefined createdAt falls back to the schema default (NOW())', () => {
+    const before = Date.now();
+    const f = frames.createIFrame('gop-test', 'undefined-ts content', 'normal', 'import', undefined);
+    const after = Date.now();
+    // SQLite datetime('now') returns UTC "YYYY-MM-DD HH:MM:SS" (no T, no Z).
+    expect(f.created_at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    const parsed = Date.parse(f.created_at.replace(' ', 'T') + 'Z');
+    expect(parsed).toBeGreaterThanOrEqual(before - 5000);
+    expect(parsed).toBeLessThanOrEqual(after + 5000);
+  });
+
+  it('createIFrame with an invalid-ISO string falls back to the schema default (NOW())', () => {
+    const before = Date.now();
+    const f = frames.createIFrame(
+      'gop-test',
+      'invalid-ts content',
+      'normal',
+      'import',
+      'not-a-valid-iso-string',
+    );
+    const after = Date.now();
+    // The literal junk must never reach storage — otherwise range queries
+    // on created_at silently break.
+    expect(f.created_at).not.toBe('not-a-valid-iso-string');
+    expect(f.created_at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    const parsed = Date.parse(f.created_at.replace(' ', 'T') + 'Z');
+    expect(parsed).toBeGreaterThanOrEqual(before - 5000);
+    expect(parsed).toBeLessThanOrEqual(after + 5000);
+  });
+
+  it('createIFrame with a null createdAt falls back to the schema default', () => {
+    // null is the explicit "no timestamp" signal harvest-local.ts passes
+    // down after its own validator rejects the caller's input.
+    const f = frames.createIFrame('gop-test', 'null-ts content', 'normal', 'import', null);
+    expect(f.created_at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  });
+
   it('dedups identical content on createIFrame and increments access_count', () => {
     const first = frames.createIFrame('gop-test', 'repeated content');
     const second = frames.createIFrame('gop-test', 'repeated content');

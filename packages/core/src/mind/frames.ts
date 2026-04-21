@@ -19,6 +19,18 @@
 import { createHash } from 'node:crypto';
 import type { MindDB } from './db.js';
 
+/** Strict ISO-8601 check used by `createIFrame` to decide whether to honor
+ *  a caller-supplied `createdAt`. Requires the `T` separator and a
+ *  timezone suffix (`Z` or `±HH:MM`) — anything looser is high-risk for
+ *  range queries on `memory_frames.created_at`. */
+function isValidIsoTimestamp(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})$/.test(value)) {
+    return false;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed);
+}
+
 export type FrameType = 'I' | 'P' | 'B';
 export type Importance = 'critical' | 'important' | 'normal' | 'temporary' | 'deprecated';
 export type FrameSource =
@@ -70,6 +82,18 @@ export class FrameStore {
     content: string,
     importance: Importance = 'normal',
     source: FrameSource = 'user_stated',
+    /** Optional override for `memory_frames.created_at`. Supplied by the harvest
+     *  path so frames ingested from an export preserve the original source
+     *  timestamp (e.g. Claude session `create_time`) instead of getting
+     *  stamped with the ingest wall-clock. Callers that don't care about
+     *  temporal-anchor preservation (live agent writes, cognify, etc.)
+     *  should omit this argument and let the `datetime('now')` default apply.
+     *
+     *  Value must be a valid ISO-8601 string; invalid / null / undefined
+     *  falls back to the schema default. The harvest-local caller is
+     *  responsible for validating + logging the fallback path — we keep
+     *  this function minimal and side-effect-free. */
+    createdAt?: string | null,
   ): MemoryFrame {
     // L1: Dedup — if identical content exists, update access count instead of duplicating.
     const existing = this.findDuplicate(content);
@@ -77,12 +101,25 @@ export class FrameStore {
 
     const t = this.nextT(gopId);
     const raw = this.db.getDatabase();
-    const result = raw
-      .prepare(
-        `INSERT INTO memory_frames (frame_type, gop_id, t, base_frame_id, content, importance, source)
-         VALUES ('I', ?, ?, NULL, ?, ?, ?)`,
-      )
-      .run(gopId, t, content, importance, source);
+    // Branch on whether the caller supplied a valid createdAt. We require
+    // the strict ISO-8601 shape `YYYY-MM-DDT…Z` — anything else falls back
+    // to the schema default (datetime('now')) to avoid writing junk
+    // timestamps that break range queries. `last_accessed` mirrors
+    // `created_at` on initial insert for consistency.
+    const useProvidedTs = typeof createdAt === 'string' && isValidIsoTimestamp(createdAt);
+    const result = useProvidedTs
+      ? raw
+          .prepare(
+            `INSERT INTO memory_frames (frame_type, gop_id, t, base_frame_id, content, importance, source, created_at, last_accessed)
+             VALUES ('I', ?, ?, NULL, ?, ?, ?, ?, ?)`,
+          )
+          .run(gopId, t, content, importance, source, createdAt, createdAt)
+      : raw
+          .prepare(
+            `INSERT INTO memory_frames (frame_type, gop_id, t, base_frame_id, content, importance, source)
+             VALUES ('I', ?, ?, NULL, ?, ?, ?)`,
+          )
+          .run(gopId, t, content, importance, source);
 
     const frame = raw
       .prepare('SELECT * FROM memory_frames WHERE id = ?')
