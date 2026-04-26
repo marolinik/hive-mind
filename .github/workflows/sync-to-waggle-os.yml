@@ -1,0 +1,211 @@
+name: sync-to-waggle-os
+
+# Sibling of waggle-os/.github/workflows/sync-mind.yml — implements the
+# REVERSE direction (hive-mind → waggle-os). Per the audit at
+# `marolinik/waggle-os/PM-Waggle-OS/decisions/2026-04-26-memory-sync-audit.md`,
+# hive-mind is empirically the more active substrate repo (ahead in 2/5
+# audit dimensions, +14 organic test files originating here), so this
+# direction is the OPERATIONALLY PRIMARY one of the two sync workflows.
+#
+# Triggered when hive-mind master receives a push that touches shared
+# substrate paths, this workflow extracts the diff, optionally rewrites
+# paths for the few cases where waggle-os uses a different package
+# directory name, opens a PR against marolinik/waggle-os main with the
+# patch applied, and tags the PR with the source SHA.
+#
+# See `marolinik/waggle-os/.github/sync.md` for full design rationale and
+# the bidirectional sync protocol.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'packages/core/src/mind/**'
+      - 'packages/core/src/harvest/**'
+      - 'packages/wiki-compiler/**'
+      - 'packages/mcp-server/**'
+      - 'packages/cli/**'
+
+concurrency:
+  group: sync-to-waggle-os-${{ github.ref }}
+  # Don't cancel — every master push deserves its own sync attempt
+  # (the resulting waggle-os PR is per-commit traceable).
+  cancel-in-progress: false
+
+jobs:
+  open-waggle-os-pr:
+    name: Open auto-sync PR to marolinik/waggle-os
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # `WAGGLE_OS_SYNC_TOKEN` is a fine-grained PAT scoped to
+    # marolinik/waggle-os with `pull_request: write` + `contents: write`.
+    # `WAGGLE_OS_SYNC_ENABLED` is the kill switch (default false per
+    # Marko ratification 2026-04-27 — workflow ships inactive until
+    # paired secrets are configured in BOTH repos).
+    if: ${{ vars.WAGGLE_OS_SYNC_ENABLED == 'true' }}
+
+    steps:
+      - name: Checkout hive-mind (full history for diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify WAGGLE_OS_SYNC_TOKEN is configured
+        run: |
+          if [ -z "${{ secrets.WAGGLE_OS_SYNC_TOKEN }}" ]; then
+            echo "::error::WAGGLE_OS_SYNC_TOKEN secret is not configured."
+            echo "::error::Run: gh secret set WAGGLE_OS_SYNC_TOKEN --repo marolinik/hive-mind"
+            echo "::error::See marolinik/waggle-os .github/sync.md for full setup instructions."
+            exit 1
+          fi
+
+      - name: Compute filtered diff
+        id: diff
+        run: |
+          set -euo pipefail
+
+          # Resolve the rev range. `${{ github.event.before }}` is the parent
+          # commit of this push; `${{ github.sha }}` is the new HEAD. For a
+          # branch's first push or a force-push, `before` may be all-zeros;
+          # in that case fall back to HEAD~1.
+          before_sha='${{ github.event.before }}'
+          after_sha='${{ github.sha }}'
+          if [ "$before_sha" = "0000000000000000000000000000000000000000" ]; then
+            echo "::warning::push has no `before` SHA — falling back to HEAD~1"
+            before_sha="$(git rev-parse HEAD~1)"
+          fi
+
+          # All shared-substrate files in this push, before exclusion.
+          # NOTE: trigger paths cover 5 directories; mcp-server may apply
+          # cleanly via path rewrite (waggle-os uses `memory-mcp` instead).
+          # Tests are excluded explicitly — `mind-parity-check.yml` on the
+          # waggle-os side handles test injection at CI run time, no
+          # committed sync needed.
+          changed=$(git diff --name-only "$before_sha" "$after_sha" -- \
+            'packages/core/src/mind/**' \
+            'packages/core/src/harvest/**' \
+            'packages/wiki-compiler/**' \
+            'packages/mcp-server/**' \
+            'packages/cli/**')
+
+          # Apply the filter: exclude *.test.ts files (handled by
+          # waggle-os mind-parity-check) and obvious release artifacts.
+          filtered_files=()
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            # Test files: skip — tests sync via parity-check at CI time.
+            case "$f" in
+              *.test.ts)
+                continue
+                ;;
+            esac
+            filtered_files+=("$f")
+          done <<< "$changed"
+
+          if [ ${#filtered_files[@]} -eq 0 ]; then
+            echo "No syncable changes after filter (likely test-only push)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Files to sync (before path rewrite):"
+          printf '  %s\n' "${filtered_files[@]}"
+
+          # Generate a patch limited to the filtered files.
+          mkdir -p .sync-output
+          git diff "$before_sha" "$after_sha" -- "${filtered_files[@]}" > .sync-output/patch.raw.diff
+
+          # Path rewrite: hive-mind has `packages/mcp-server/`; waggle-os
+          # has `packages/memory-mcp/`. Rewrite both --- and +++ headers
+          # in the unified diff so `git apply` finds the right targets
+          # in the waggle-os checkout. Other 4 trigger paths match
+          # directly (core, wiki-compiler, cli) — no rewrite needed.
+          sed -E \
+            -e 's|^--- a/packages/mcp-server/|--- a/packages/memory-mcp/|' \
+            -e 's|^\+\+\+ b/packages/mcp-server/|+++ b/packages/memory-mcp/|' \
+            -e 's|^diff --git a/packages/mcp-server/|diff --git a/packages/memory-mcp/|' \
+            -e 's| b/packages/mcp-server/| b/packages/memory-mcp/|' \
+            .sync-output/patch.raw.diff > .sync-output/patch.diff
+
+          # Capture original commit subjects for the PR body.
+          git log --format='- %h %s' "$before_sha".."$after_sha" -- "${filtered_files[@]}" > .sync-output/commits.txt
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "after_sha=$after_sha" >> "$GITHUB_OUTPUT"
+          echo "after_short=$(git rev-parse --short "$after_sha")" >> "$GITHUB_OUTPUT"
+          echo "first_subject=$(git log -1 --format=%s "$after_sha")" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout waggle-os for patch application
+        if: steps.diff.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: marolinik/waggle-os
+          ref: main
+          token: ${{ secrets.WAGGLE_OS_SYNC_TOKEN }}
+          path: waggle-os
+          fetch-depth: 0
+
+      - name: Apply patch to waggle-os branch + push
+        if: steps.diff.outputs.skip != 'true'
+        working-directory: waggle-os
+        env:
+          GH_TOKEN: ${{ secrets.WAGGLE_OS_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          branch_name="auto-sync/hive-mind-${{ steps.diff.outputs.after_short }}"
+          git config user.name 'hive-mind-sync-bot'
+          git config user.email 'sync-bot@waggle-os.ai'
+          git checkout -b "$branch_name"
+
+          # Apply the rewritten patch. `--3way` falls back to a 3-way
+          # merge for small index mismatches; if even that fails, exit
+          # with a clear pointer to the patch artifact for manual
+          # reconciliation.
+          if ! git apply --3way ../.sync-output/patch.diff; then
+            echo "::error::Patch did not apply cleanly. Manual reconciliation required."
+            echo "::error::Source SHA: ${{ steps.diff.outputs.after_sha }}"
+            echo "::error::Inspect the workflow artifact `sync-patch-${{ steps.diff.outputs.after_short }}` for the rewritten patch + raw diff + commit list."
+            exit 1
+          fi
+
+          git add -A
+          git commit -m "chore(sync): auto-sync from hive-mind@${{ steps.diff.outputs.after_short }}
+
+          Source: marolinik/hive-mind master @ ${{ steps.diff.outputs.after_sha }}
+          Subject: ${{ steps.diff.outputs.first_subject }}
+
+          See PR description for the full list of hive-mind commits in this batch."
+
+          git push origin "$branch_name"
+
+      - name: Open PR on waggle-os
+        if: steps.diff.outputs.skip != 'true'
+        working-directory: waggle-os
+        env:
+          GH_TOKEN: ${{ secrets.WAGGLE_OS_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          branch_name="auto-sync/hive-mind-${{ steps.diff.outputs.after_short }}"
+          commit_list="$(cat ../.sync-output/commits.txt)"
+
+          gh pr create \
+            --repo marolinik/waggle-os \
+            --base main \
+            --head "$branch_name" \
+            --title "auto-sync from hive-mind@${{ steps.diff.outputs.after_short }}: ${{ steps.diff.outputs.first_subject }}" \
+            --body "$(printf 'Automated cross-repo sync — sibling workflow to waggle-os/.github/workflows/sync-mind.yml, REVERSE direction (hive-mind → waggle-os).\n\n## Source\n- Repo: marolinik/hive-mind\n- Branch: master\n- HEAD: %s\n- Workflow run: %s/%s/actions/runs/%s\n\n## Filtering\nThis patch was filtered to exclude:\n- `*.test.ts` files — handled separately by waggle-os `mind-parity-check.yml` at CI run time, no committed sync needed.\n- Release artifacts in package roots that do not flow back (CHANGELOG.md, version-only package.json bumps) are not in trigger paths.\n\n## Path rewrites applied\n- `packages/mcp-server/` (hive-mind) → `packages/memory-mcp/` (waggle-os)\n- Other trigger paths (core, wiki-compiler, cli) match directly.\n\n## Originating hive-mind commits in this batch\n\n%s\n\n## Review checklist\n- [ ] Patch applied cleanly to waggle-os main without 3-way conflicts\n- [ ] Path rewrites correctly mapped (mcp-server → memory-mcp where applicable)\n- [ ] No upstream changes leak Waggle-specific code introduced ad-hoc into hive-mind during the batch (sanity check the diff)\n- [ ] `mind-parity-check` on this PR is GREEN (otherwise the sync would re-introduce a regression)\n- [ ] Existing waggle-os tests under `tests/mind/` still pass against the synced code\n\n## Reference\n- Memory Sync Repair closure memo (3-step plan + lessons learned + runbook): `marolinik/waggle-os/PM-Waggle-OS/decisions/2026-04-27-memory-sync-repair-CLOSED.md`\n- Forward-direction workflow: `marolinik/waggle-os/.github/workflows/sync-mind.yml`\n- Operating manual: `marolinik/waggle-os/.github/sync.md`' \
+              "${{ steps.diff.outputs.after_sha }}" \
+              "${{ github.server_url }}" \
+              "${{ github.repository }}" \
+              "${{ github.run_id }}" \
+              "$commit_list")"
+
+      - name: Upload patch as artifact (debug aid)
+        if: always() && steps.diff.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-patch-${{ steps.diff.outputs.after_short }}
+          path: .sync-output/
+          retention-days: 30
