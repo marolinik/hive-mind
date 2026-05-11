@@ -1,6 +1,6 @@
 {
   "name": "@hive-mind/wiki-compiler",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Compile memory frames and knowledge graph entities into interlinked wiki pages via LLM synthesis",
   "license": "Apache-2.0",
   "type": "module",
@@ -12,31 +12,42 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
   "scripts": {
     "build": "tsc --build",
     "clean": "tsc --build --clean"
   },
   "dependencies": {
-    "@hive-mind/core": "0.1.0"
+    "@hive-mind/core": "0.2.0"
   },
   "peerDependencies": {
     "@anthropic-ai/sdk": "^0.24.0"
   },
   "peerDependenciesMeta": {
-    "@anthropic-ai/sdk": { "optional": true }
+    "@anthropic-ai/sdk": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.24.0"
   },
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/marolinik/hive-mind.git",
     "directory": "packages/wiki-compiler"
   },
   "homepage": "https://github.com/marolinik/hive-mind/tree/master/packages/wiki-compiler#readme",
-  "bugs": { "url": "https://github.com/marolinik/hive-mind/issues" },
+  "bugs": {
+    "url": "https://github.com/marolinik/hive-mind/issues"
+  },
   "author": "Egzakta Group d.o.o. <hello@egzakta.com> (https://egzakta.com)",
   "keywords": [
     "wiki",
@@ -47,5 +58,7 @@
     "synthesis",
     "hive-mind"
   ],
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@hive-mind/mcp-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server exposing hive-mind memory (21 tools + 4 resources) over stdio for Claude Code, Claude Desktop, Codex, and any MCP-compatible client",
   "license": "Apache-2.0",
   "type": "module",
@@ -24,7 +24,12 @@
       "import": "./dist/resources/*.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
   "scripts": {
     "build": "tsc --build",
     "clean": "tsc --build --clean",
@@ -32,18 +37,22 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.3",
-    "@hive-mind/core": "0.1.0",
-    "@hive-mind/wiki-compiler": "0.1.0",
+    "@hive-mind/core": "0.2.0",
+    "@hive-mind/wiki-compiler": "0.2.0",
     "zod": "^3.23.0"
   },
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/marolinik/hive-mind.git",
     "directory": "packages/mcp-server"
   },
   "homepage": "https://github.com/marolinik/hive-mind/tree/master/packages/mcp-server#readme",
-  "bugs": { "url": "https://github.com/marolinik/hive-mind/issues" },
+  "bugs": {
+    "url": "https://github.com/marolinik/hive-mind/issues"
+  },
   "author": "Egzakta Group d.o.o. <hello@egzakta.com> (https://egzakta.com)",
   "keywords": [
     "mcp",
@@ -55,5 +64,7 @@
     "ai",
     "hive-mind"
   ],
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

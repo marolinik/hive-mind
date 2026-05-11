@@ -1,6 +1,6 @@
 {
   "name": "@hive-mind/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Memory substrate: FrameStore, HybridSearch, KnowledgeGraph, IdentityLayer, AwarenessLayer, harvest pipeline",
   "license": "Apache-2.0",
   "type": "module",
@@ -12,7 +12,12 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE", "NOTICE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
   "scripts": {
     "build": "tsc --build",
     "clean": "tsc --build --clean"
@@ -26,21 +31,29 @@
     "pdf-parse": "^2.4.5"
   },
   "peerDependenciesMeta": {
-    "@huggingface/transformers": { "optional": true },
-    "pdf-parse": { "optional": true }
+    "@huggingface/transformers": {
+      "optional": true
+    },
+    "pdf-parse": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@huggingface/transformers": "^3.8.1",
     "pdf-parse": "^2.4.5"
   },
-  "publishConfig": { "access": "public" },
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/marolinik/hive-mind.git",
     "directory": "packages/core"
   },
   "homepage": "https://github.com/marolinik/hive-mind/tree/master/packages/core#readme",
-  "bugs": { "url": "https://github.com/marolinik/hive-mind/issues" },
+  "bugs": {
+    "url": "https://github.com/marolinik/hive-mind/issues"
+  },
   "author": "Egzakta Group d.o.o. <hello@egzakta.com> (https://egzakta.com)",
   "keywords": [
     "memory",
@@ -56,5 +69,7 @@
     "embedding",
     "hive-mind"
   ],
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }
