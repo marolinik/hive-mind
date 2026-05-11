@@ -405,7 +405,10 @@ export class WikiCompiler {
     const synthesisPageNames: string[] = [];
 
     // 1. Compile entity pages for all significant entities
-    const entities = this.kg.getEntities(200);
+    // Limit raised from 200 to 2000 (2026-05-07): post-3b-2 LLM extraction
+    // produces ~500-1500 high-signal entities per mind. The old 200 cap meant
+    // alphabetically-late entities like "hive-mind" silently lost their page.
+    const entities = this.kg.getEntities(2000);
     for (const entity of entities) {
       // Skip entities we've already compiled unless new frames exist
       if (incremental && watermark.lastFrameId > 0) {

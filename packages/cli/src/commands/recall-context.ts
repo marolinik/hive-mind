@@ -6,13 +6,23 @@
  */
 
 import { openPersonalMind, type CliEnv } from '../setup.js';
+import type { HybridSearch } from '@hive-mind/core';
 
 export interface RecallContextOptions {
   query: string;
   limit?: number;
-  scope?: 'personal' | 'all';
+  /**
+   * 'personal' = personal mind only (default).
+   * 'current'  = single workspace mind only (requires `workspace`).
+   * 'all'      = personal + every workspace mind, fused by score.
+   */
+  scope?: 'personal' | 'all' | 'current';
+  /** Required when scope='current'. Workspace ID, e.g. 'proj-hive-mind-test'. */
+  workspace?: string;
   profile?: 'balanced' | 'recent' | 'important' | 'connected';
   format?: 'plain' | 'json';
+  /** When false, skips cross-encoder reranking. Defaults to enabled. */
+  rerank?: boolean;
   /** Override for tests — use an already-open env instead of opening a new one. */
   env?: CliEnv;
 }
@@ -39,22 +49,52 @@ export async function runRecallContext(options: RecallContextOptions): Promise<R
     const scope = options.scope ?? 'personal';
     const profile = options.profile ?? 'balanced';
 
-    const search = await env.getSearch();
-    const searchOpts = { limit, profile };
+    // Lazy-load the reranker. If --no-rerank or load fails, we get
+    // undefined back and search.search just skips the rerank step.
+    const reranker = options.rerank === false ? undefined : await env.getReranker();
+    const searchOpts: Parameters<HybridSearch['search']>[1] = { limit, profile, reranker };
     const hits: RecallContextResult['hits'] = [];
 
-    // Personal mind
-    const personalResults = await search.search(options.query, searchOpts);
-    for (const r of personalResults) {
-      hits.push({
-        id: r.frame.id,
-        content: r.frame.content,
-        importance: r.frame.importance,
-        source: r.frame.source,
-        score: Math.round(r.finalScore * 1000) / 1000,
-        created_at: r.frame.created_at,
-        from: 'personal',
-      });
+    // Personal mind — only when scope is 'personal' or 'all'.
+    // Scope 'current' is single-workspace only and skips personal entirely.
+    if (scope === 'personal' || scope === 'all') {
+      const search = await env.getSearch();
+      const personalResults = await search.search(options.query, searchOpts);
+      for (const r of personalResults) {
+        hits.push({
+          id: r.frame.id,
+          content: r.frame.content,
+          importance: r.frame.importance,
+          source: r.frame.source,
+          score: Math.round(r.finalScore * 1000) / 1000,
+          created_at: r.frame.created_at,
+          from: 'personal',
+        });
+      }
+    }
+
+    // Single workspace when scope=current.
+    if (scope === 'current' && options.workspace) {
+      const wsDb = env.mindCache.getOrOpen(options.workspace);
+      if (wsDb) {
+        try {
+          const { HybridSearch } = await import('@hive-mind/core');
+          const wsEmbedder = await env.getEmbedder();
+          const wsSearch = new HybridSearch(wsDb, wsEmbedder);
+          const wsResults = await wsSearch.search(options.query, searchOpts);
+          for (const r of wsResults) {
+            hits.push({
+              id: r.frame.id,
+              content: r.frame.content,
+              importance: r.frame.importance,
+              source: r.frame.source,
+              score: Math.round(r.finalScore * 1000) / 1000,
+              created_at: r.frame.created_at,
+              from: `workspace:${options.workspace}`,
+            });
+          }
+        } catch { /* workspace search failure is non-fatal */ }
+      }
     }
 
     // All workspaces when scope=all

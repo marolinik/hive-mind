@@ -132,13 +132,38 @@ CREATE TABLE IF NOT EXISTS harvest_sources (
   last_content_hash TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Memory frame chunks: paragraph-level subdivisions of memory_frames for
+-- semantic-search precision. One frame produces N chunks (N=1 for short
+-- frames). Each chunk gets its own embedding in memory_frame_chunks_vec.
+-- Recall maps top-K chunks back to parent frames via frame_id.
+CREATE TABLE IF NOT EXISTS memory_frame_chunks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  frame_id INTEGER NOT NULL REFERENCES memory_frames(id) ON DELETE CASCADE,
+  chunk_idx INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  char_start INTEGER NOT NULL,
+  char_end INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(frame_id, chunk_idx)
+);
+CREATE INDEX IF NOT EXISTS idx_chunks_frame ON memory_frame_chunks (frame_id);
 `;
 
 // The sqlite-vec virtual table is created separately because it requires the
 // `vec0` module loaded via `sqlite_vec.load()` — that call happens in MindDB's
 // constructor before SCHEMA_SQL + VEC_TABLE_SQL are executed.
+//
+// Two virtual tables:
+//   memory_frames_vec        — whole-frame embeddings (legacy + fallback)
+//   memory_frame_chunks_vec  — chunk-level embeddings (primary search target)
+// Recall fuses both signals via RRF; chunks dominate when populated.
 export const VEC_TABLE_SQL = `
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_frames_vec USING vec0(
+  embedding float[1024]
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_frame_chunks_vec USING vec0(
   embedding float[1024]
 );
 `;

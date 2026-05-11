@@ -267,9 +267,30 @@ export async function createEmbeddingProvider(
       activeType = 'mock';
       activeModelName = 'deterministic-mock';
       lastError = 'No real providers available';
-      log.info(
-        'Embedding provider: mock (no real providers available — semantic search quality degraded)',
-      );
+      // Loud, structured warning — the silent "mock fallback" was the
+      // most dangerous failure mode in Phase 3b-3 audit. Mock embeddings
+      // are deterministic byte hashes; semantic search returns noise.
+      // We want this to be IMPOSSIBLE to miss in a CLI/server log.
+      const msg = [
+        '',
+        '⚠️  EMBEDDING WARNING ─────────────────────────────────────────',
+        '   Active provider: mock (deterministic byte hash)',
+        '   Effect: semantic search returns noise, not meaning.',
+        '',
+        '   To fix, install Ollama and pull the embedding model:',
+        '     ollama pull nomic-embed-text',
+        '   Then ensure the process can reach http://localhost:11434.',
+        '',
+        '   Alternative providers:',
+        '     HIVE_MIND_EMBEDDING_PROVIDER=inprocess  (downloads 23MB)',
+        '     VOYAGE_API_KEY=...                      (paid, recommended)',
+        '     OPENAI_API_KEY=...                      (paid)',
+        '─────────────────────────────────────────────────────────────',
+        '',
+      ].join('\n');
+      // stderr so it survives stdout-piped JSON consumers and CI tee.
+      try { process.stderr.write(msg); } catch { /* fall through to log */ }
+      log.warn('Embedding provider degraded to mock — semantic search quality is noise. See stderr banner for fix instructions.');
     }
   }
 

@@ -1,9 +1,11 @@
 /**
- * `hive-mind-cli status` — show frame/entity/relation counts and the most
- * recent frame, so a persona can eyeball whether the memory substrate is
- * healthy without opening the SQLite file directly.
+ * `hive-mind-cli status` — show frame/entity/relation counts, the most
+ * recent frame, AND the active embedding provider so a persona can
+ * eyeball whether the memory substrate is healthy and whether semantic
+ * search is real or mock-degraded.
  *
- * Read-only: does not probe the embedder, does not mutate anything.
+ * Embedder probe is opt-in via `--probe-embedder` to keep the default
+ * fast (no Ollama HTTP round-trip required).
  */
 
 import fs from 'node:fs';
@@ -13,12 +15,15 @@ import { openPersonalMind, resolveDataDir, type CliEnv } from '../setup.js';
 export interface StatusOptions {
   env?: CliEnv;
   dataDir?: string;
+  /** When true, probe the embedder to surface active provider + dims. */
+  probeEmbedder?: boolean;
 }
 
 export interface StatusResult {
   dataDir: string;
   personalMindExists: boolean;
   frames: number;
+  framesWithVec: number;
   entities: number;
   relations: number;
   entityTypeCounts: Array<{ type: string; count: number }>;
@@ -30,6 +35,15 @@ export interface StatusResult {
     preview: string;
   } | null;
   workspaces: Array<{ id: string; name: string }>;
+  /** Present only when `probeEmbedder: true`. */
+  embedder?: {
+    activeProvider: string;
+    modelName: string;
+    dimensions: number;
+    available: string[];
+    degraded: boolean;
+    lastError?: string;
+  };
 }
 
 /** Content preview cap — long frames don't flood the status output. */
@@ -45,6 +59,7 @@ export async function runStatus(options: StatusOptions = {}): Promise<StatusResu
       dataDir,
       personalMindExists: false,
       frames: 0,
+      framesWithVec: 0,
       entities: 0,
       relations: 0,
       entityTypeCounts: [],
@@ -63,6 +78,13 @@ export async function runStatus(options: StatusOptions = {}): Promise<StatusResu
     const frameCountRow = db
       .prepare("SELECT COUNT(*) AS n FROM memory_frames WHERE importance != 'deprecated'")
       .get() as { n: number } | undefined;
+    // memory_frames_vec is a sqlite-vec virtual table — count rows to detect
+    // "frames saved before embedder was wired" gaps. Tolerate missing extension.
+    let framesWithVec = 0;
+    try {
+      const vecRow = db.prepare('SELECT COUNT(*) AS n FROM memory_frames_vec').get() as { n: number } | undefined;
+      framesWithVec = vecRow?.n ?? 0;
+    } catch { /* vec extension unavailable — leave at 0 */ }
     const relationCountRow = db
       .prepare("SELECT COUNT(*) AS n FROM knowledge_relations WHERE valid_to IS NULL")
       .get() as { n: number } | undefined;
@@ -88,10 +110,36 @@ export async function runStatus(options: StatusOptions = {}): Promise<StatusResu
       name: w.name,
     }));
 
+    let embedder: StatusResult['embedder'] | undefined;
+    if (options.probeEmbedder) {
+      try {
+        const inst = await env.getEmbedder();
+        const st = inst.getStatus();
+        embedder = {
+          activeProvider: st.activeProvider,
+          modelName: st.modelName,
+          dimensions: st.dimensions,
+          available: st.availableProviders,
+          degraded: st.activeProvider === 'mock',
+          lastError: st.lastError,
+        };
+      } catch (err) {
+        embedder = {
+          activeProvider: 'unknown',
+          modelName: 'probe-failed',
+          dimensions: 0,
+          available: [],
+          degraded: true,
+          lastError: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+
     return {
       dataDir: env.dataDir,
       personalMindExists: true,
       frames: frameCountRow?.n ?? 0,
+      framesWithVec,
       entities: entityCount,
       relations: relationCountRow?.n ?? 0,
       entityTypeCounts,
@@ -103,6 +151,7 @@ export async function runStatus(options: StatusOptions = {}): Promise<StatusResu
         preview: previewOf(lastFrameRow.content),
       } : null,
       workspaces: workspaceList,
+      embedder,
     };
   } finally {
     close();
@@ -131,8 +180,24 @@ export function renderStatusResult(result: StatusResult, format: 'plain' | 'json
   }
 
   lines.push(`  frames:       ${result.frames.toLocaleString('en-US')}`);
+  // Surface vec coverage so a missing-embedding fleet is visible.
+  // 100% coverage = every frame has a vec row (semantic search reaches it).
+  const vecPct = result.frames > 0 ? Math.round((result.framesWithVec / result.frames) * 100) : 0;
+  lines.push(`  vec coverage: ${result.framesWithVec.toLocaleString('en-US')} / ${result.frames.toLocaleString('en-US')} (${vecPct}%)`);
   lines.push(`  entities:     ${result.entities.toLocaleString('en-US')}`);
   lines.push(`  relations:    ${result.relations.toLocaleString('en-US')}`);
+
+  if (result.embedder) {
+    const e = result.embedder;
+    const degradedTag = e.degraded ? '  ⚠️  DEGRADED — semantic search returns noise' : '';
+    lines.push(`  embedder:     ${e.activeProvider} (${e.modelName}, ${e.dimensions}d)${degradedTag}`);
+    if (e.available.length > 1) {
+      lines.push(`  available:    ${e.available.join(', ')}`);
+    }
+    if (e.lastError) {
+      lines.push(`  last error:   ${e.lastError}`);
+    }
+  }
 
   if (result.entityTypeCounts.length > 0) {
     const top = result.entityTypeCounts.slice(0, 5)

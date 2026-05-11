@@ -15,6 +15,7 @@
 import type { MindDB } from './db.js';
 import type { Embedder } from './embeddings.js';
 import type { MemoryFrame, Importance } from './frames.js';
+import type { Reranker } from './inprocess-reranker.js';
 import {
   computeRelevance,
   SCORING_PROFILES,
@@ -31,6 +32,15 @@ export interface SearchOptions {
   since?: string;
   /** Only include frames created on or before this ISO date string. */
   until?: string;
+  /**
+   * Cross-encoder reranker invoked AFTER RRF on the top-`rerankPoolSize`
+   * candidates. When provided, results are sorted by reranker score
+   * instead of finalScore. RRF + relevance still rank the candidate
+   * pool; the reranker only re-orders the survivors.
+   */
+  reranker?: Reranker;
+  /** How many candidates to send to the reranker (default 30). */
+  rerankPoolSize?: number;
 }
 
 export interface SearchResult {
@@ -59,9 +69,15 @@ export class HybridSearch {
     const { limit = 20, gopId, profile = 'balanced', context = {}, since, until } = options;
     const weights = SCORING_PROFILES[profile];
 
+    // Prefer chunk-level vector search when chunks_vec is populated:
+    // discriminates better on domain-homogeneous corpora than whole-frame
+    // embeddings. vectorSearchChunks returns null when no chunks exist,
+    // signalling clean fallback to the whole-frame path. Both paths return
+    // frame IDs so the rest of the RRF + scoring pipeline is unchanged.
+    const chunkResults = await this.vectorSearchChunks(query, limit * 2, gopId);
     const [keywordResults, vectorResults] = await Promise.all([
       this.keywordSearch(query, limit * 2, gopId),
-      this.vectorSearch(query, limit * 2, gopId),
+      chunkResults !== null ? Promise.resolve(chunkResults) : this.vectorSearch(query, limit * 2, gopId),
     ]);
 
     // RRF fusion.
@@ -128,6 +144,31 @@ export class HybridSearch {
     }
 
     results.sort((a, b) => b.finalScore - a.finalScore);
+
+    // Optional cross-encoder reranking on the top pool. Reranker scoring
+    // is jointly attentive over (query, doc), so it discriminates much
+    // better than vector dot products on densely-homogeneous corpora.
+    // We rerank the survivors only — RRF still selects the candidate pool.
+    if (options.reranker) {
+      const poolSize = Math.min(options.rerankPoolSize ?? 30, results.length);
+      const pool = results.slice(0, poolSize);
+      try {
+        const docs = pool.map((r) => r.frame.content);
+        const scores = await options.reranker.scoreBatch(query, docs);
+        // Pair (result, rerank score), sort desc, replace finalScore so the
+        // shape stays the same for downstream consumers.
+        const reranked = pool.map((r, i) => ({ ...r, finalScore: scores[i] }));
+        reranked.sort((a, b) => b.finalScore - a.finalScore);
+        // Append any pool tail items beyond rerankPoolSize so a small limit
+        // doesn't suddenly contract the result set.
+        return reranked.concat(results.slice(poolSize)).slice(0, limit);
+      } catch {
+        // Reranker failure (model load, OOM, dim mismatch) — fall back to
+        // RRF ordering. Soft-fail so a misconfigured reranker doesn't
+        // kill recall_memory entirely.
+      }
+    }
+
     return results.slice(0, limit);
   }
 
@@ -265,5 +306,133 @@ export class HybridSearch {
       }
     });
     insertAll();
+  }
+
+  // ── Chunk-level indexing (Phase 3b-3 chunking) ─────────────────────────
+  // Whole-frame embeddings cluster too tightly on a domain-homogeneous
+  // corpus (every frame is "about hive-mind"), so retrieval can't
+  // discriminate. Chunking decomposes a frame into ~500-token paragraph-
+  // level pieces, each with its own embedding — search returns the chunk,
+  // we map back to the parent frame for the final result.
+  // ─────────────────────────────────────────────────────────────────────
+
+  /**
+   * Replace all chunks for a frame: clears existing chunks/vec rows for the
+   * frame, re-chunks the content, embeds each chunk, inserts both rows.
+   * Idempotent — safe to call repeatedly. Used by --rechunk-all migration.
+   */
+  async indexChunksForFrame(
+    frameId: number,
+    content: string,
+    opts: { maxChars?: number; overlapChars?: number; minChunkChars?: number } = {},
+  ): Promise<number> {
+    if (!Number.isFinite(frameId) || frameId <= 0) {
+      throw new Error('Invalid frame ID for chunk indexing');
+    }
+    const raw = this.db.getDatabase();
+    const id = Math.trunc(frameId);
+
+    // Lazy import to keep search.ts free of cycle risk.
+    const { chunkText } = await import('./chunker.js');
+    const chunks = chunkText(content, opts);
+    if (chunks.length === 0) return 0;
+
+    // Embed all chunks. Use embedBatch when the embedder supports it for
+    // amortised HTTP overhead on Ollama/API providers.
+    const texts = chunks.map((c) => c.text);
+    const embeddings = await this.embedder.embedBatch(texts);
+
+    // Single tx so partial failure leaves the frame's chunks empty
+    // (next rechunk pass will re-fill from scratch — same end state).
+    const tx = raw.transaction(() => {
+      // Find existing chunk_ids for this frame so we can drop their vec rows.
+      // Foreign-key cascade handles memory_frame_chunks deletion when the
+      // parent frame is deleted, but for re-indexing we're keeping the
+      // frame and just replacing its chunks.
+      const existing = raw
+        .prepare('SELECT id FROM memory_frame_chunks WHERE frame_id = ?')
+        .all(id) as Array<{ id: number }>;
+      for (const row of existing) {
+        // sqlite-vec rowid must be SQL literal.
+        raw.prepare(`DELETE FROM memory_frame_chunks_vec WHERE rowid = ${Math.trunc(row.id)}`).run();
+      }
+      raw.prepare('DELETE FROM memory_frame_chunks WHERE frame_id = ?').run(id);
+
+      const insertChunk = raw.prepare(
+        'INSERT INTO memory_frame_chunks (frame_id, chunk_idx, content, char_start, char_end) VALUES (?, ?, ?, ?, ?)',
+      );
+      for (let i = 0; i < chunks.length; i++) {
+        const c = chunks[i];
+        const result = insertChunk.run(id, i, c.text, c.charStart, c.charEnd);
+        const chunkId = Math.trunc(Number(result.lastInsertRowid));
+        raw
+          .prepare(`INSERT INTO memory_frame_chunks_vec (rowid, embedding) VALUES (${chunkId}, ?)`)
+          .run(f32ToBlob(embeddings[i]));
+      }
+    });
+    tx();
+    return chunks.length;
+  }
+
+  /**
+   * Vector search over chunks. Returns parent frame IDs deduped (best-chunk-
+   * per-frame wins). When chunks_vec is empty, returns null so callers can
+   * cleanly fall back to the whole-frame vectorSearch path.
+   */
+  async vectorSearchChunks(query: string, limit: number, gopId?: string): Promise<number[] | null> {
+    const raw = this.db.getDatabase();
+    // Cheap probe — avoid embedding the query when chunks aren't populated.
+    let chunkCount = 0;
+    try {
+      const row = raw.prepare('SELECT COUNT(*) AS n FROM memory_frame_chunks').get() as
+        | { n: number }
+        | undefined;
+      chunkCount = row?.n ?? 0;
+    } catch {
+      return null;
+    }
+    if (chunkCount === 0) return null;
+
+    const embedding = await this.embedder.embed(query);
+    const blob = f32ToBlob(embedding);
+
+    // Over-fetch chunks (limit * 5) so dedup-to-frame still leaves enough
+    // candidates after collapsing multiple chunks of the same frame.
+    try {
+      const chunkRows = raw
+        .prepare(
+          `SELECT v.rowid AS chunk_id, c.frame_id
+             FROM memory_frame_chunks_vec v
+             JOIN memory_frame_chunks c ON c.id = v.rowid
+            WHERE v.embedding MATCH ? AND k = ?
+            ORDER BY distance`,
+        )
+        .all(blob, Math.max(limit * 5, 25)) as Array<{ chunk_id: number; frame_id: number }>;
+
+      if (chunkRows.length === 0) return [];
+
+      // Dedup by frame_id, preserving first-seen order (best-distance chunk).
+      const seen = new Set<number>();
+      const frameIds: number[] = [];
+      for (const r of chunkRows) {
+        if (seen.has(r.frame_id)) continue;
+        seen.add(r.frame_id);
+        frameIds.push(r.frame_id);
+        if (frameIds.length >= limit) break;
+      }
+
+      if (gopId) {
+        const placeholders = frameIds.map(() => '?').join(',');
+        const filtered = raw
+          .prepare(
+            `SELECT id FROM memory_frames WHERE id IN (${placeholders}) AND gop_id = ?`,
+          )
+          .all(...frameIds, gopId) as { id: number }[];
+        return filtered.map((r) => r.id).slice(0, limit);
+      }
+      return frameIds;
+    } catch {
+      return null;
+    }
   }
 }

@@ -49,10 +49,16 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
     case 'recall-context': {
       const query = (values['query'] as string) ?? positionals[0];
       if (!query) throw new Error('recall-context requires a query (positional or --query)');
+      const scope = (values['scope'] as 'personal' | 'all' | 'current' | undefined) ?? 'personal';
+      const workspace = values['workspace'] as string | undefined;
+      if (scope === 'current' && !workspace) {
+        throw new Error('recall-context --scope=current requires --workspace=<id>');
+      }
       const result = await runRecallContext({
         query,
         limit: intArg(values, 'limit'),
-        scope: (values['scope'] as 'personal' | 'all' | undefined) ?? 'personal',
+        scope,
+        workspace,
         profile: (values['profile'] as 'balanced' | 'recent' | 'important' | 'connected' | undefined),
         env,
       });
@@ -88,28 +94,52 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
     }
 
     case 'cognify': {
+      const extractorArg = typeof values['extractor'] === 'string' ? values['extractor'] : undefined;
+      if (extractorArg && extractorArg !== 'heuristic' && extractorArg !== 'llm') {
+        throw new Error(`--extractor must be 'heuristic' or 'llm', got: ${extractorArg}`);
+      }
+      const executorArg = typeof values['executor'] === 'string' ? values['executor'] : undefined;
+      if (executorArg && executorArg !== 'cc' && executorArg !== 'api') {
+        throw new Error(`--executor must be 'cc' or 'api', got: ${executorArg}`);
+      }
       const result = await runCognify({
         since: intArg(values, 'since'),
         limit: intArg(values, 'limit'),
+        fullRescan: Boolean(values['full-rescan']),
+        workspace: typeof values['workspace'] === 'string' ? values['workspace'] : undefined,
+        allWorkspaces: Boolean(values['all-workspaces']),
+        extractor: extractorArg as 'heuristic' | 'llm' | undefined,
+        executor: executorArg as 'cc' | 'api' | undefined,
+        llmModel: typeof values['llm-model'] === 'string' ? values['llm-model'] : undefined,
+        llmBatch: intArg(values, 'llm-batch'),
         env,
       });
-      return fmt === 'json' ? json(result) : (
-        `Scanned ${result.framesScanned} frames — ${result.entitiesCreated} new entities, ` +
-        `${result.entitiesUpdated} updated (lastFrameId=${result.lastFrameId})`
-      );
+      if (fmt === 'json') return json(result);
+      const head = `Scanned ${result.framesScanned} frames — ${result.entitiesCreated} new entities, ${result.entitiesUpdated} updated (lastFrameId=${result.lastFrameId})`;
+      if (!result.perMind || result.perMind.length === 0) return head;
+      const breakdown = result.perMind
+        .map((m) => `  ${m.mind.padEnd(20)} ${m.framesScanned}f, ${m.entitiesCreated} new, ${m.entitiesUpdated} updated (last=${m.lastFrameId})`)
+        .join('\n');
+      return `${head}\n${breakdown}`;
     }
 
     case 'compile-wiki': {
       const result = await runCompileWiki({
         mode: (values['mode'] as 'incremental' | 'full' | undefined) ?? 'incremental',
         concepts: values['concept'] as string[] | undefined,
+        workspace: typeof values['workspace'] === 'string' ? values['workspace'] : undefined,
+        allWorkspaces: Boolean(values['all-workspaces']),
         env,
       });
-      return fmt === 'json' ? json(result) : (
-        `Wiki compiled via ${result.provider} — ${result.pagesCreated} created, ` +
+      if (fmt === 'json') return json(result);
+      const head = `Wiki compiled via ${result.provider} — ${result.pagesCreated} created, ` +
         `${result.pagesUpdated} updated, ${result.pagesUnchanged} unchanged, ` +
-        `${result.healthIssues} health issues (${result.durationMs}ms)`
-      );
+        `${result.healthIssues} health issues (${result.durationMs}ms)`;
+      if (!result.perMind || result.perMind.length === 0) return head;
+      const breakdown = result.perMind
+        .map((m) => `  ${m.mind.padEnd(20)} ${m.pagesCreated}c, ${m.pagesUpdated}u, ${m.pagesUnchanged}- (${m.healthIssues} issues, ${m.durationMs}ms)`)
+        .join('\n');
+      return `${head}\n${breakdown}`;
     }
 
     case 'maintenance': {
@@ -117,10 +147,14 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
         compact: Boolean(values['compact']),
         wipeImports: Boolean(values['wipe-imports']),
         reconcile: Boolean(values['reconcile']),
+        reembedAll: Boolean(values['reembed-all']),
+        rechunkAll: Boolean(values['rechunk-all']),
         cognify: Boolean(values['cognify']),
         wiki: Boolean(values['wiki']),
         maxTempAgeDays: intArg(values, 'max-temp-age-days'),
         maxDeprecatedAgeDays: intArg(values, 'max-deprecated-age-days'),
+        workspace: typeof values['workspace'] === 'string' ? values['workspace'] : undefined,
+        allWorkspaces: Boolean(values['all-workspaces']),
         env,
       });
       if (fmt === 'json') return json(result);
@@ -128,6 +162,8 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
       if (result.compact) lines.push(`  compact:      temp=${result.compact.temporaryPruned} deprecated=${result.compact.deprecatedPruned} pframes=${result.compact.pframesMerged}`);
       if (result.wipeImports) lines.push(`  wipeImports:  ${result.wipeImports.framesDeleted} frames`);
       if (result.reconcile) lines.push(`  reconcile:    fts=${result.reconcile.ftsFixed} vec=${result.reconcile.vecFixed}`);
+      if (result.reembedAll) lines.push(`  reembed-all:  ${result.reembedAll.framesEmbedded} frames via ${result.reembedAll.activeProvider}/${result.reembedAll.modelName} in ${(result.reembedAll.durationMs / 1000).toFixed(1)}s`);
+      if (result.rechunkAll) lines.push(`  rechunk-all:  ${result.rechunkAll.framesProcessed} frames → ${result.rechunkAll.chunksCreated} chunks via ${result.rechunkAll.activeProvider}/${result.rechunkAll.modelName} in ${(result.rechunkAll.durationMs / 1000).toFixed(1)}s`);
       if (result.cognify) lines.push(`  cognify:      ${result.cognify.framesScanned} frames, ${result.cognify.entitiesCreated} new, ${result.cognify.entitiesUpdated} updated`);
       if (result.wiki) lines.push(`  wiki:         ${result.wiki.pagesCreated} created, ${result.wiki.pagesUpdated} updated, provider=${result.wiki.provider}`);
       return lines.join('\n');
@@ -139,7 +175,10 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
     }
 
     case 'status': {
-      const result = await runStatus({ env });
+      const result = await runStatus({
+        env,
+        probeEmbedder: Boolean(values['probe-embedder']),
+      });
       return fmt === 'json' ? json(result) : renderStatusResult(result, 'plain');
     }
 

@@ -130,6 +130,12 @@ export type { ConceptEntry, ConceptUpdate } from './mind/concept-tracker.js';
 // Hybrid search + scoring
 export { HybridSearch } from './mind/search.js';
 export type { SearchOptions, SearchResult } from './mind/search.js';
+export { chunkText } from './mind/chunker.js';
+export type { FrameChunk, ChunkOptions } from './mind/chunker.js';
+export { createInProcessReranker } from './mind/inprocess-reranker.js';
+export type { Reranker, InProcessRerankerConfig } from './mind/inprocess-reranker.js';
+export { extractEntitiesViaLLM, LLM_ENTITY_TYPES } from './mind/llm-extractor.js';
+export type { ExtractedEntity, LlmEntityType, LlmExtractorOptions, LlmExecutor } from './mind/llm-extractor.js';
 export {
   SCORING_PROFILES,
   computeTemporalScore,

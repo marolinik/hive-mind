@@ -84,6 +84,12 @@ export class MindDB {
     // tables that older .mind databases haven't seen yet.
     this.applySql(SCHEMA_SQL);
 
+    // VEC_TABLE_SQL also uses IF NOT EXISTS — re-applying ensures new vec
+    // tables (e.g. memory_frame_chunks_vec added in semantic-chunking work)
+    // get created on databases that predate them, while leaving existing
+    // memory_frames_vec untouched.
+    this.applySql(VEC_TABLE_SQL);
+
     // Provenance: `memory_frames.source` was added after the initial release.
     // Old frames default to 'user_stated' which is the correct fallback for
     // frames persisted before provenance tracking existed.

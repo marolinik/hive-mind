@@ -33,7 +33,24 @@ export function registerMemoryTools(server: McpServer): void {
       const imp = (importance ?? 'normal') as Importance;
       const src = (source ?? 'agent_inferred') as FrameSource;
 
-      // Resolve target mind
+      // Auto-attach: if a workspace id was supplied but no workspace row
+      // exists, create one on the fly. Hook-driven callers (SessionStart,
+      // UserPromptSubmit, Stop) pass a CWD-derived id like "proj-hive-mind-test"
+      // and have no opportunity to create it explicitly first — without this,
+      // the save silently falls through to personal memory.
+      if (workspace) {
+        const wm = getWorkspaceManager();
+        if (!wm.get(workspace)) {
+          const displayName = workspace
+            .replace(/^proj-/, '')
+            .replace(/[-_]+/g, ' ')
+            .trim()
+            .replace(/\b\w/g, (c) => c.toUpperCase()) || workspace;
+          wm.ensure(workspace, { name: displayName, group: 'auto' });
+        }
+      }
+
+      // Resolve target mind (now safe — workspace exists if it was supplied)
       const target = workspace ? getWorkspaceMind(workspace) : null;
       const frameStore = target?.frameStore ?? getFrameStore();
       const sessions = target?.sessions ?? getSessions();

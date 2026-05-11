@@ -82,6 +82,48 @@ export class WorkspaceManager {
     return config;
   }
 
+  /**
+   * Ensure a workspace with the given id exists. Idempotent — returns the
+   * existing config unchanged if the workspace already exists; otherwise
+   * creates it with the supplied id (bypassing slug-collision handling in
+   * generateId, since callers construct ids from trusted internal state
+   * like CWD-derived prefixes — e.g. SessionStart hooks).
+   *
+   * Use this from auto-attach paths (e.g. save_memory with a workspace arg
+   * that names a workspace not yet created on disk). Direct-create flows
+   * with user-supplied names should still go through `create()` so the
+   * generateId collision logic runs.
+   */
+  ensure(
+    id: string,
+    options: { name?: string; group?: string; icon?: string; model?: string } = {},
+  ): WorkspaceConfig {
+    const existing = this.get(id);
+    if (existing) return existing;
+
+    const wsDir = path.join(this.workspacesDir, id);
+    fs.mkdirSync(wsDir, { recursive: true });
+    fs.mkdirSync(path.join(wsDir, 'sessions'), { recursive: true });
+    fs.writeFileSync(path.join(wsDir, 'workspace.mind'), '');
+
+    const config: WorkspaceConfig = {
+      id,
+      name: options.name ?? id,
+      group: options.group ?? 'auto',
+      ...(options.icon !== undefined && { icon: options.icon }),
+      ...(options.model !== undefined && { model: options.model }),
+      created: new Date().toISOString(),
+    };
+
+    fs.writeFileSync(
+      path.join(wsDir, 'workspace.json'),
+      JSON.stringify(config, null, 2),
+      'utf-8',
+    );
+
+    return config;
+  }
+
   /** List every workspace by reading workspace.json from each subdirectory. */
   list(): WorkspaceConfig[] {
     if (!fs.existsSync(this.workspacesDir)) return [];

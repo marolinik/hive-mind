@@ -190,6 +190,26 @@ export class KnowledgeGraph {
       .all(`%${query}%`, limit) as Entity[];
   }
 
+  /**
+   * Exact-name lookup. Returns the active entity whose name equals the
+   * query (case-sensitive), or undefined.
+   *
+   * Use this instead of `searchEntities(name, 3).find(...)` for dedup —
+   * the LIKE-based fuzzy search drops the exact match out of the top-K
+   * window once enough similarly-named entities accumulate, which causes
+   * dedup failures and runaway duplicate-row growth (e.g. 3506 copies of
+   * "Phase" because "Phase 1", "Phase 2", … alphabetically precede the
+   * plain "Phase" in a LIKE '%Phase%' result).
+   */
+  findEntityByName(name: string): Entity | undefined {
+    return this.db
+      .getDatabase()
+      .prepare(
+        'SELECT * FROM knowledge_entities WHERE name = ? AND valid_to IS NULL LIMIT 1',
+      )
+      .get(name) as Entity | undefined;
+  }
+
   getEntitiesValidAt(isoTime: string, limit = 500): Entity[] {
     return this.db
       .getDatabase()

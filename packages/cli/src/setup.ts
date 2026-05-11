@@ -21,8 +21,10 @@ import {
   WorkspaceManager,
   MultiMindCache,
   createEmbeddingProvider,
+  createInProcessReranker,
   type EmbeddingProviderConfig,
   type EmbeddingProviderInstance,
+  type Reranker,
 } from '@hive-mind/core';
 
 export interface CliEnv {
@@ -40,6 +42,12 @@ export interface CliEnv {
   getEmbedder: () => Promise<EmbeddingProviderInstance>;
   /** Search against the personal mind with an embedder lazily resolved on first call. */
   getSearch: () => Promise<HybridSearch>;
+  /**
+   * Lazily-loaded cross-encoder reranker (~22MB on first call). Returns
+   * undefined if @huggingface/transformers isn't installed or model load
+   * fails — callers should handle null gracefully and skip reranking.
+   */
+  getReranker: () => Promise<Reranker | undefined>;
   close: () => void;
 }
 
@@ -58,7 +66,21 @@ export function resolveDataDir(): string {
 /**
  * Resolve an embedding-provider config from the same env vars as the MCP
  * server so a single `.env` file can configure both.
+ *
+ * Priority (highest first):
+ *   1. HIVE_MIND_EMBEDDING_PROVIDER explicit override
+ *   2. OLLAMA_URL set                          → ollama at custom URL
+ *   3. VOYAGE_API_KEY                          → voyage
+ *   4. OPENAI_API_KEY                          → openai
+ *   5. (default) ollama at http://localhost:11434
+ *      — most users running Ollama use the default port. The probe fails
+ *      fast (~30ms) if it's not running, then the chain falls to mock.
+ *      Avoids the silent "always mock" trap that bit Phase 3b-3 audit.
+ *      Skip the InProcess auto-probe to avoid a surprise 23MB download.
  */
+const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
+const DEFAULT_OLLAMA_MODEL = 'nomic-embed-text';
+
 function embedderConfigFromEnv(dataDir: string): EmbeddingProviderConfig {
   const explicit = process.env.HIVE_MIND_EMBEDDING_PROVIDER as
     | EmbeddingProviderConfig['provider']
@@ -74,7 +96,8 @@ function embedderConfigFromEnv(dataDir: string): EmbeddingProviderConfig {
   } else if (process.env.OPENAI_API_KEY) {
     provider = 'openai';
   } else {
-    provider = 'mock';
+    // No explicit config — try Ollama at default URL. Fails fast if absent.
+    provider = 'ollama';
   }
 
   return {
@@ -82,14 +105,26 @@ function embedderConfigFromEnv(dataDir: string): EmbeddingProviderConfig {
     targetDimensions: 1024,
     inprocess: { cacheDir: path.join(dataDir, 'models') },
     ollama: {
-      baseUrl: process.env.OLLAMA_URL,
-      model: process.env.OLLAMA_MODEL,
+      baseUrl: process.env.OLLAMA_URL ?? DEFAULT_OLLAMA_URL,
+      model: process.env.OLLAMA_MODEL ?? DEFAULT_OLLAMA_MODEL,
     },
     ...(process.env.VOYAGE_API_KEY && {
-      voyage: { apiKey: process.env.VOYAGE_API_KEY },
+      voyage: {
+        apiKey: process.env.VOYAGE_API_KEY,
+        // voyage-3 is 1024 dims (matches our schema); voyage-3-lite is 512.
+        // Multilingual workloads should set VOYAGE_MODEL=voyage-multilingual-2.
+        model: process.env.VOYAGE_MODEL ?? 'voyage-3',
+      },
     }),
     ...(process.env.OPENAI_API_KEY && {
-      openai: { apiKey: process.env.OPENAI_API_KEY },
+      openai: {
+        apiKey: process.env.OPENAI_API_KEY,
+        // text-embedding-3-small native is 1536 dims; we set targetDimensions
+        // to 1024 above which the api-embedder slices via Matryoshka. If you
+        // need a different cap, set OPENAI_MODEL to text-embedding-3-large
+        // (3072 native dims, also Matryoshka-truncatable).
+        model: process.env.OPENAI_MODEL ?? 'text-embedding-3-small',
+      },
     }),
   };
 }
@@ -118,6 +153,7 @@ export function openPersonalMind(dataDir: string = resolveDataDir()): CliEnv {
 
   let _embedder: EmbeddingProviderInstance | null = null;
   let _search: HybridSearch | null = null;
+  let _reranker: Reranker | undefined | null = null; // null = unattempted; undefined = attempted-and-failed
 
   const getEmbedder = async (): Promise<EmbeddingProviderInstance> => {
     if (_embedder) return _embedder;
@@ -130,6 +166,21 @@ export function openPersonalMind(dataDir: string = resolveDataDir()): CliEnv {
     const embedder = await getEmbedder();
     _search = new HybridSearch(db, embedder);
     return _search;
+  };
+
+  const getReranker = async (): Promise<Reranker | undefined> => {
+    if (_reranker !== null) return _reranker ?? undefined;
+    try {
+      _reranker = await createInProcessReranker({
+        cacheDir: path.join(dataDir, 'models'),
+      });
+      return _reranker;
+    } catch (err) {
+      // peer dep not installed, model load failed, network blip on first
+      // download — soft fail. Search still works without reranker.
+      _reranker = undefined;
+      return undefined;
+    }
   };
 
   return {
@@ -145,6 +196,7 @@ export function openPersonalMind(dataDir: string = resolveDataDir()): CliEnv {
     mindCache,
     getEmbedder,
     getSearch,
+    getReranker,
     close: () => {
       mindCache.closeAll();
       try { db.close(); } catch { /* already closed */ }

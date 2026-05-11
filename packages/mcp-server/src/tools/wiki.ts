@@ -14,6 +14,7 @@ import {
   getFrameStore,
   getSearch,
   getKnowledgeGraph,
+  getWorkspaceMind,
 } from '../core/setup.js';
 import {
   WikiCompiler,
@@ -33,10 +34,37 @@ async function getSynthesizer(): Promise<ResolvedSynthesizer> {
   return _synthesizer;
 }
 
-async function getCompiler(): Promise<{ compiler: WikiCompiler; state: CompilationState; provider: string }> {
+/**
+ * Resolve the WikiCompiler + CompilationState against the right mind.
+ * Without workspaceId: targets personal mind (existing behavior).
+ * With workspaceId: opens the workspace mind via the LRU cache and
+ * builds the wiki against its own knowledge graph + frame store. The
+ * `wiki_pages` table is created on first compile via CompilationState's
+ * `CREATE TABLE IF NOT EXISTS`.
+ */
+async function getCompiler(
+  workspaceId?: string,
+): Promise<{ compiler: WikiCompiler; state: CompilationState; provider: string }> {
+  const synth = await getSynthesizer();
+
+  if (workspaceId) {
+    const mind = getWorkspaceMind(workspaceId);
+    if (!mind) {
+      throw new Error(`Workspace not found or mind unavailable: ${workspaceId}`);
+    }
+    const state = new CompilationState(mind.db);
+    const compiler = new WikiCompiler(
+      mind.knowledgeGraph,
+      mind.frameStore,
+      mind.search,
+      state,
+      { synthesize: synth.synthesize },
+    );
+    return { compiler, state, provider: synth.provider };
+  }
+
   const db = getPersonalDb();
   const state = new CompilationState(db);
-  const synth = await getSynthesizer();
   const compiler = new WikiCompiler(
     getKnowledgeGraph(),
     getFrameStore(),
@@ -52,15 +80,17 @@ export function registerWikiTools(server: McpServer): void {
   // ── compile_wiki ───────────────────────────────────────────────
   server.tool(
     'compile_wiki',
-    'Compile the personal wiki from memory frames and knowledge graph. Uses incremental compilation by default (only processes new frames). Returns compilation statistics.',
+    'Compile a wiki from memory frames and knowledge graph. Defaults to the personal mind; pass workspace_id to compile a workspace-scoped wiki. Incremental by default.',
     {
       mode: z.enum(['incremental', 'full']).default('incremental')
         .describe('incremental: only recompile affected pages. full: rebuild everything.'),
       concepts: z.array(z.string()).optional()
         .describe('Optional list of concept names to compile pages for. Auto-detected if omitted.'),
+      workspace_id: z.string().optional()
+        .describe('Compile against a workspace mind instead of personal. Workspace must exist.'),
     },
-    async ({ mode, concepts }) => {
-      const { compiler, provider } = await getCompiler();
+    async ({ mode, concepts, workspace_id }) => {
+      const { compiler, provider } = await getCompiler(workspace_id);
 
       try {
         const result = await compiler.compile({
@@ -101,12 +131,14 @@ export function registerWikiTools(server: McpServer): void {
   // ── get_page ───────────────────────────────────────────────────
   server.tool(
     'get_page',
-    'Read a compiled wiki page by its slug (e.g., "project-alpha", "index", "synthesis-memory").',
+    'Read a compiled wiki page by its slug (e.g., "project-alpha", "index", "synthesis-memory"). Pass workspace_id to fetch from a workspace wiki.',
     {
       slug: z.string().describe('Page slug (URL-safe name). Use "index" for the wiki index.'),
+      workspace_id: z.string().optional()
+        .describe('Read from a workspace wiki instead of personal.'),
     },
-    async ({ slug }) => {
-      const { state } = await getCompiler();
+    async ({ slug, workspace_id }) => {
+      const { state } = await getCompiler(workspace_id);
       const page = state.getPage(slug);
 
       if (!page) {
@@ -152,15 +184,17 @@ export function registerWikiTools(server: McpServer): void {
   // ── search_wiki ────────────────────────────────────────────────
   server.tool(
     'search_wiki',
-    'Search compiled wiki pages by name or type. Returns matching page metadata.',
+    'Search compiled wiki pages by name or type. Defaults to the personal wiki; pass workspace_id to search a workspace wiki.',
     {
       query: z.string().optional()
         .describe('Search query to match against page names'),
       type: z.enum(['entity', 'concept', 'synthesis', 'index', 'health']).optional()
         .describe('Filter by page type'),
+      workspace_id: z.string().optional()
+        .describe('Search a workspace wiki instead of personal.'),
     },
-    async ({ query, type }) => {
-      const { state } = await getCompiler();
+    async ({ query, type, workspace_id }) => {
+      const { state } = await getCompiler(workspace_id);
 
       let pages = type
         ? state.getPagesByType(type)
