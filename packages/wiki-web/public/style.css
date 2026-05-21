@@ -1,0 +1,152 @@
+:root {
+  --bg: #0d1117;
+  --bg-2: #161b22;
+  --fg: #c9d1d9;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --border: #30363d;
+  --error: #f85149;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.5; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.app {
+  display: grid;
+  grid-template-columns: 220px 1fr 280px;
+  min-height: 100vh;
+}
+
+.left-nav, .right-rail {
+  background: var(--bg-2);
+  padding: 16px;
+  border-right: 1px solid var(--border);
+}
+.right-rail { border-right: none; border-left: 1px solid var(--border); }
+
+.brand { font-size: 18px; margin: 0 0 16px 0; color: var(--accent); font-family: ui-monospace, "Cascadia Code", "Consolas", monospace; }
+.left-nav nav { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.left-nav nav a { padding: 6px 8px; border-radius: 4px; }
+.left-nav nav a.active, .left-nav nav a:hover { background: rgba(88, 166, 255, 0.12); }
+
+.search-box input { width: 100%; padding: 6px 8px; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; }
+
+.main { padding: 24px; max-width: 960px; }
+h2 { margin-top: 0; }
+section { margin: 24px 0; }
+.muted { color: var(--muted); font-size: 12px; }
+.error { color: var(--error); }
+
+ul.results { list-style: none; padding: 0; }
+ul.results li { padding: 10px 0; border-bottom: 1px solid var(--border); }
+
+.search-form { display: flex; gap: 8px; margin-bottom: 16px; }
+.search-form input { flex: 1; padding: 8px 12px; background: var(--bg-2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+.search-form button { padding: 8px 16px; background: var(--accent); color: var(--bg); border: none; border-radius: 6px; cursor: pointer; }
+
+.content-block {
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  background: var(--bg-2);
+  padding: 12px;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Markdown body rendering (marked output) */
+.body p { margin: 0.6em 0; }
+.body p.lead { font-size: 1.05em; color: var(--fg); margin-top: 0.2em; }
+.body h2, .body h3, .body h4 { margin-top: 1.4em; margin-bottom: 0.4em; line-height: 1.25; }
+.body h2 { font-size: 1.4em; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.body h3 { font-size: 1.2em; }
+.body h4 { font-size: 1.05em; color: var(--muted); }
+.body ul, .body ol { padding-left: 24px; margin: 0.6em 0; }
+.body li { margin: 0.2em 0; }
+.body code {
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.9em;
+}
+.body pre {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.body pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+.body blockquote {
+  margin: 0.8em 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+  background: rgba(88, 166, 255, 0.06);
+}
+.body table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 13px;
+  width: 100%;
+}
+.body th, .body td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.body th {
+  background: var(--bg-2);
+  font-weight: 600;
+}
+.body tr:nth-child(even) td { background: rgba(255, 255, 255, 0.02); }
+.body hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.4em 0;
+}
+.body a { color: var(--accent); text-decoration: none; }
+.body a:hover { text-decoration: underline; }
+
+/* Source-frames fallback (when synth body is empty) */
+.source-frames-heading {
+  margin-top: 0.4em;
+  font-size: 1.1em;
+}
+.source-frames-heading small {
+  font-weight: normal;
+  font-size: 0.75em;
+  margin-left: 6px;
+}
+.source-frames {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+.source-frames li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.source-frames li:last-child {
+  border-bottom: none;
+}
+.source-frames .meta {
+  margin-bottom: 6px;
+}
+.source-frames .content-block {
+  font-size: 13px;
+}
