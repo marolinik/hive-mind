@@ -1,0 +1,24 @@
+{
+  "name": "@hive-mind/enrichment",
+  "version": "0.3.0",
+  "description": "In-loop memory enrichment: synth-queue, contradiction-detector, decision-archaeology, failure-recall, cross-project-recall, prompt-composer.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./cli-bridge": "./src/cli-bridge.js",
+    "./workspace-deriver": "./src/workspace-deriver.js",
+    "./query-builder": "./src/query-builder.js",
+    "./frame-caps": "./src/frame-caps.js",
+    "./prompt-composer": "./src/prompt-composer.js",
+    "./post-turn-emit": "./src/post-turn-emit.js",
+    "./synth-queue": "./src/synth-queue.js"
+  },
+  "bin": {
+    "hive-mind-synth-drain": "bin/synth-drain.js",
+    "hive-mind-synth-queue": "bin/synth-queue.js"
+  },
+  "engines": { "node": ">=20" },
+  "repository": { "type": "git", "url": "https://github.com/marolinik/hive-mind", "directory": "packages/enrichment" }
+}

@@ -1,6 +1,6 @@
 {
   "name": "@hive-mind/wiki-compiler",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Compile memory frames and knowledge graph entities into interlinked wiki pages via LLM synthesis",
   "license": "Apache-2.0",
   "type": "module",
@@ -23,7 +23,7 @@
     "clean": "tsc --build --clean"
   },
   "dependencies": {
-    "@hive-mind/core": "0.2.0"
+    "@hive-mind/core": "0.3.0"
   },
   "peerDependencies": {
     "@anthropic-ai/sdk": "^0.24.0"

@@ -1,0 +1,88 @@
+{
+  "name": "hive-mind",
+  "version": "0.3.0",
+  "description": "Local-first persistent memory for Claude Code. SQLite-backed, MCP-compatible, semantic + FTS5 hybrid search. Cross-platform.",
+  "author": {
+    "name": "Egzakta Group",
+    "url": "https://github.com/marolinik/hive-mind"
+  },
+  "homepage": "https://github.com/marolinik/hive-mind",
+  "repository": "https://github.com/marolinik/hive-mind",
+  "license": "Apache-2.0",
+  "keywords": [
+    "memory",
+    "knowledge-graph",
+    "mcp",
+    "semantic-search",
+    "local-first",
+    "wiki"
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/claude-code-hooks/hooks/session-start.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/claude-code-hooks/hooks/user-prompt-submit.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/claude-code-hooks/hooks/stop.js\"",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/claude-code-hooks/hooks/pre-compact.js\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/packages/claude-code-hooks/hooks/post-tool-use.js\"",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "hive-mind": {
+      "command": "npx",
+      "args": ["-y", "@hive-mind/mcp-server"]
+    }
+  },
+  "commands": [
+    {
+      "path": "packages/claude-code-hooks/commands/hive.md"
+    }
+  ]
+}
