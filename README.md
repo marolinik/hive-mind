@@ -15,7 +15,7 @@
 Persistent memory, semantic search, knowledge graph, and wiki compiler for AI agents.
 Runs locally. Zero cloud dependency.
 
-**📊 Benchmark:** 73.1% (Opus 4.7) / 73.4% (Qwen3.6-35B) on [LoCoMo](./benchmarks/locomo/RESULTS.md) N=320 stratified, **+4.6pp over Mem0 paper baseline**. Substrate-claim memory-lift: Fisher one-sided p = 8.07 × 10⁻¹⁸ at N=400 (retrieval 22.25% vs no-context 3.00%).
+**📊 Benchmark:** Self-judge **73.1% (Opus 4.7) / 73.4% (Qwen3.6-35B)** on [LoCoMo](./benchmarks/locomo/RESULTS.md) N=320 stratified, **+4.6pp over Mem0 paper baseline**. Trio-strict ensemble (Opus 4.7 + GPT-5.5 + MiniMax M2.7): **67.8%**; self-judge inflation +5.3pp. Substrate-claim memory-lift: Fisher one-sided p = 8.07 × 10⁻¹⁸ at N=400 (retrieval 22.25% vs no-context 3.00%).
 
 ---
 

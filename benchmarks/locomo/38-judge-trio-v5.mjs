@@ -85,23 +85,39 @@ function buildPrompt(question, reference, modelAnswer) {
 }
 
 // Parse for the JSON label OR fallback to scanning for CORRECT/WRONG.
+//
+// Updated 2026-05-21 after 63/320 parse failures in the first run:
+//   - 44 were empty responses (MiniMax reasoning tokens filled max_tokens)
+//   - 18 were mid-sentence cutoffs (same root cause)
+//   - 2 used "INCORRECT" as a synonym for "WRONG"
+//
+// This parser now also accepts INCORRECT as WRONG, which catches the cases
+// where the judge wrote a clear verdict in natural language but never emitted
+// the literal token "WRONG". The empty + cutoff cases are addressed by
+// bumping max_tokens in the per-judge fetch calls.
 function parseVerdict(text) {
   const raw = String(text || '');
 
-  // Preferred path: JSON with "label" field
-  const jsonMatch = raw.match(/\{\s*"label"\s*:\s*"(CORRECT|WRONG)"\s*\}/i);
+  // Preferred path: JSON with "label" field — also accept INCORRECT
+  const jsonMatch = raw.match(/\{\s*"label"\s*:\s*"(CORRECT|WRONG|INCORRECT)"\s*\}/i);
   if (jsonMatch) {
-    return { verdict: jsonMatch[1].toUpperCase() === 'CORRECT' ? 1 : 0, parsed: true, raw };
+    const label = jsonMatch[1].toUpperCase();
+    return { verdict: label === 'CORRECT' ? 1 : 0, parsed: true, raw };
   }
 
-  // Fallback: scan for the literal word. Mem0 prompt asks for explanation +
-  // label, so we look at the END of the response where the label should sit.
+  // Fallback: scan the END of the response for the verdict word.
+  // \b ensures we don't match "CORRECT" inside "INCORRECT" — but we do
+  // explicitly accept "INCORRECT" as a WRONG synonym.
   const tail = raw.slice(-400).toUpperCase();
   const hasCorrect = /\bCORRECT\b/.test(tail);
   const hasWrong = /\bWRONG\b/.test(tail);
-  if (hasCorrect && !hasWrong) return { verdict: 1, parsed: true, raw };
-  if (hasWrong && !hasCorrect) return { verdict: 0, parsed: true, raw };
-  // Both present or neither — model violated the prompt, mark unparsed.
+  const hasIncorrect = /\bINCORRECT\b/.test(tail);
+
+  // INCORRECT wins over CORRECT (the parser was always wrong on this).
+  if (hasIncorrect && !hasWrong) return { verdict: 0, parsed: true, raw };
+  if (hasWrong) return { verdict: 0, parsed: true, raw };
+  if (hasCorrect) return { verdict: 1, parsed: true, raw };
+  // Empty or non-verdict response — model exhausted token budget or failed.
   return { verdict: null, parsed: false, raw };
 }
 
@@ -116,7 +132,7 @@ async function judgeAnthropic(prompt) {
     },
     body: JSON.stringify({
       model: ANTHROPIC_MODEL,
-      max_tokens: 200,
+      max_tokens: 500,  // 2026-05-21: bumped 200 -> 500 after 6 parse failures (mid-cutoffs)
       messages: [{ role: 'user', content: prompt }],
     }),
   });
@@ -137,7 +153,7 @@ async function judgeOpenAI(prompt) {
     },
     body: JSON.stringify({
       model: OPENAI_MODEL,
-      max_completion_tokens: 200,
+      max_completion_tokens: 500,  // 2026-05-21: bumped 200 -> 500 after 23 parse failures
       messages: [{ role: 'user', content: prompt }],
     }),
   });
@@ -158,7 +174,7 @@ async function judgeMiniMax(prompt) {
     },
     body: JSON.stringify({
       model: MINIMAX_MODEL,
-      max_tokens: 800,  // M2.7 emits reasoning tokens — give headroom
+      max_tokens: 3000,  // 2026-05-21: bumped 800 -> 3000 after 36 parse failures (M2.7 reasoning + verdict)
       messages: [{ role: 'user', content: prompt }],
     }),
   });
