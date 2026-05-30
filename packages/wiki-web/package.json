@@ -16,6 +16,36 @@
     "express": "^4.21.0",
     "marked": "^14.1.4"
   },
-  "engines": { "node": ">=20" },
-  "repository": { "type": "git", "url": "https://github.com/marolinik/hive-mind" }
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marolinik/hive-mind.git",
+    "directory": "packages/wiki-web"
+  },
+  "files": [
+    "src",
+    "bin",
+    "public",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/marolinik/hive-mind/tree/master/packages/wiki-web#readme",
+  "bugs": {
+    "url": "https://github.com/marolinik/hive-mind/issues"
+  },
+  "author": "Egzakta Group d.o.o. <hello@egzakta.com> (https://egzakta.com)",
+  "keywords": [
+    "memory",
+    "ai",
+    "hive-mind",
+    "wiki",
+    "knowledge-graph",
+    "ui"
+  ]
 }

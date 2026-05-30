@@ -11,6 +11,36 @@
   "dependencies": {
     "@hive-mind/enrichment": "0.3.0"
   },
-  "engines": { "node": ">=20" },
-  "repository": { "type": "git", "url": "https://github.com/marolinik/hive-mind", "directory": "packages/claude-code-hooks" }
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marolinik/hive-mind.git",
+    "directory": "packages/claude-code-hooks"
+  },
+  "files": [
+    "hooks",
+    "commands",
+    "bin",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/marolinik/hive-mind/tree/master/packages/claude-code-hooks#readme",
+  "bugs": {
+    "url": "https://github.com/marolinik/hive-mind/issues"
+  },
+  "author": "Egzakta Group d.o.o. <hello@egzakta.com> (https://egzakta.com)",
+  "keywords": [
+    "memory",
+    "ai",
+    "hive-mind",
+    "claude-code",
+    "hooks",
+    "mcp"
+  ]
 }

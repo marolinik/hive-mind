@@ -19,6 +19,35 @@
     "hive-mind-synth-drain": "bin/synth-drain.js",
     "hive-mind-synth-queue": "bin/synth-queue.js"
   },
-  "engines": { "node": ">=20" },
-  "repository": { "type": "git", "url": "https://github.com/marolinik/hive-mind", "directory": "packages/enrichment" }
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marolinik/hive-mind.git",
+    "directory": "packages/enrichment"
+  },
+  "files": [
+    "src",
+    "bin",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/marolinik/hive-mind/tree/master/packages/enrichment#readme",
+  "bugs": {
+    "url": "https://github.com/marolinik/hive-mind/issues"
+  },
+  "author": "Egzakta Group d.o.o. <hello@egzakta.com> (https://egzakta.com)",
+  "keywords": [
+    "memory",
+    "ai",
+    "hive-mind",
+    "enrichment",
+    "synthesis",
+    "claude-code"
+  ]
 }
