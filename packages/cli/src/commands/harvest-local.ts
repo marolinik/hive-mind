@@ -65,6 +65,7 @@ function parseWithAdapter(source: HarvestSource, pathOrJson: string): UniversalI
   } catch (err) {
     throw new Error(
       `Failed to read ${pathOrJson}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
 
@@ -74,6 +75,7 @@ function parseWithAdapter(source: HarvestSource, pathOrJson: string): UniversalI
   } catch (err) {
     throw new Error(
       `Failed to parse ${pathOrJson} as JSON: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
 

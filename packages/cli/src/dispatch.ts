@@ -186,7 +186,7 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
       // Long-running. Exits with the child's exit code; this branch only
       // returns once the MCP server child has stopped.
       const code = await runMcpStart();
-      process.exit(code);
+      return process.exit(code);
     }
 
     case 'mcp-call': {
@@ -200,7 +200,7 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
           parsedArgs = JSON.parse(argsRaw) as Record<string, unknown>;
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          throw new Error(`--args is not valid JSON: ${msg}`);
+          throw new Error(`--args is not valid JSON: ${msg}`, { cause: err });
         }
       }
 

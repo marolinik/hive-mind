@@ -301,7 +301,7 @@ export async function extractEntitiesViaLLM(
     const validIds = new Set(batch.map((f) => f.id));
     const prompt = buildBatchPrompt(batch, maxFrameChars);
 
-    let raw = '';
+    let raw: string;
     try {
       raw = executor === 'cc'
         ? await callClaudeSubprocess(prompt, timeoutMs)

@@ -98,7 +98,7 @@ function maybeKickCatchUpDrain() {
   // no env override), the catch-up feature is silently disabled.
   if (!DRAIN_SCRIPT) return '';
 
-  let pendingCount = 0;
+  let pendingCount;
   try {
     pendingCount = listPending(50).length;
   } catch {

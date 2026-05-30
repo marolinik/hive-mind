@@ -40,7 +40,7 @@ function formatIdentity(identity, cap) {
   if (items.length === 0 && identity && typeof identity === 'object') {
     // identity may be an object of fields
     const entries = Object.entries(identity)
-      .filter(([k, v]) => typeof v === 'string' && v.length > 0)
+      .filter(([, v]) => typeof v === 'string' && v.length > 0)
       .slice(0, cap);
     return entries.map(([k, v]) => `- ${k}: ${v}`).join('\n');
   }

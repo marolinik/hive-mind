@@ -41,6 +41,7 @@ export function resolveMcpServerEntry(): string {
       '@hive-mind/mcp-server is not resolvable from the CLI. ' +
       'Run `npm install` at the repo root, or install @hive-mind/mcp-server ' +
       `alongside @hive-mind/cli. (${msg})`,
+      { cause: err },
     );
   }
 }

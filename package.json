@@ -5,22 +5,43 @@
   "license": "Apache-2.0",
   "type": "module",
   "private": true,
-  "workspaces": ["packages/*"],
-  "engines": { "node": ">=20" },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc --build",
     "build:clean": "tsc --build --clean",
+    "typecheck": "tsc --build",
+    "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "tsc --build --clean && rm -rf packages/*/dist"
   },
-  "repository": { "type": "git", "url": "https://github.com/marolinik/hive-mind" },
-  "keywords": ["memory", "ai", "mcp", "knowledge-graph", "wiki", "local-first", "semantic-search"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marolinik/hive-mind"
+  },
+  "keywords": [
+    "memory",
+    "ai",
+    "mcp",
+    "knowledge-graph",
+    "wiki",
+    "local-first",
+    "semantic-search"
+  ],
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
     "@vitest/coverage-v8": "^2.1.8",
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0",
     "typescript": "^5.8.3",
+    "typescript-eslint": "^8.60.0",
     "vitest": "^2.1.8"
   }
 }

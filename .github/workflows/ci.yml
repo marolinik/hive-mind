@@ -39,10 +39,10 @@ jobs:
         run: npm ci --include=optional
 
       - name: Lint
-        run: npm run lint --if-present
+        run: npm run lint
 
       - name: Typecheck
-        run: npm run typecheck --if-present
+        run: npm run typecheck
 
       - name: Build all workspace packages
         run: npm run build

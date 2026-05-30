@@ -1,3 +1,4 @@
+/* global document */
 // Client-side: debounced search input.
 (function () {
   const input = document.querySelector('.left-nav .search-box input[name="q"]');

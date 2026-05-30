@@ -385,8 +385,6 @@ export class FrameStore {
     maxDeprecatedAgeDays = 90,
   ): { temporaryPruned: number; deprecatedPruned: number; pframesMerged: number } {
     const raw = this.db.getDatabase();
-    let temporaryPruned = 0;
-    let deprecatedPruned = 0;
     let pframesMerged = 0;
 
     const tempResult = raw
@@ -396,7 +394,7 @@ export class FrameStore {
            AND created_at < datetime('now', '-' || ? || ' days')`,
       )
       .run(maxTempAgeDays);
-    temporaryPruned = tempResult.changes;
+    const temporaryPruned = tempResult.changes;
 
     const depResult = raw
       .prepare(
@@ -405,7 +403,7 @@ export class FrameStore {
            AND created_at < datetime('now', '-' || ? || ' days')`,
       )
       .run(maxDeprecatedAgeDays);
-    deprecatedPruned = depResult.changes;
+    const deprecatedPruned = depResult.changes;
 
     const gopsWithManyPframes = raw
       .prepare(

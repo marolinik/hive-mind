@@ -382,7 +382,7 @@ export class HybridSearch {
   async vectorSearchChunks(query: string, limit: number, gopId?: string): Promise<number[] | null> {
     const raw = this.db.getDatabase();
     // Cheap probe — avoid embedding the query when chunks aren't populated.
-    let chunkCount = 0;
+    let chunkCount: number;
     try {
       const row = raw.prepare('SELECT COUNT(*) AS n FROM memory_frame_chunks').get() as
         | { n: number }
