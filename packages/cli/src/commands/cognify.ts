@@ -12,8 +12,9 @@
  * once via `--all-workspaces`. Watermarks are per-mind so each scope
  * tracks its own delta-only progress.
  *
- * Watermark (3a-3): persistent state at ~/.hive-mind/cognify.watermark
- * (personal) or ~/.hive-mind/workspaces/<id>/cognify.watermark (per
+ * Watermark (3a-3): persistent state under the env's data dir
+ * (HIVE_MIND_DATA_DIR, default ~/.hive-mind): <dataDir>/cognify.watermark
+ * (personal) or <dataDir>/workspaces/<id>/cognify.watermark (per
  * workspace) tracks the last successfully-processed frame id. Subsequent
  * runs only scan frames newer than that, dropping the post-tool-use 60s
  * full-DB rescan to delta-only. `--full-rescan` bypasses the watermark.
@@ -21,8 +22,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
-import { openPersonalMind, type CliEnv } from '../setup.js';
+import { openPersonalMind, resolveDataDir, type CliEnv } from '../setup.js';
 import {
   normalizeEntityName,
   MindDB,
@@ -32,12 +32,25 @@ import {
   type LlmExecutor,
 } from '@hive-mind/core';
 
-/** Per-mind watermark file path. */
-function watermarkPath(mindKey: 'personal' | { workspaceId: string }): string {
+/**
+ * Per-mind watermark file path, rooted at the caller's data dir.
+ *
+ * `dataDir` MUST be threaded from the active `CliEnv` (`env.dataDir`) so the
+ * watermark lives beside the DB it tracks. Defaulting to `os.homedir()`
+ * (the pre-fix behaviour) made the watermark process-global mutable state:
+ * a custom `HIVE_MIND_DATA_DIR` install wrote its watermark to `~/.hive-mind`
+ * decoupled from its actual DB, and test runs leaked watermarks across each
+ * other. The default `resolveDataDir()` keeps the real `~/.hive-mind` install
+ * byte-identical for non-env callers.
+ */
+function watermarkPath(
+  mindKey: 'personal' | { workspaceId: string },
+  dataDir: string = resolveDataDir(),
+): string {
   if (mindKey === 'personal') {
-    return path.join(os.homedir(), '.hive-mind', 'cognify.watermark');
+    return path.join(dataDir, 'cognify.watermark');
   }
-  return path.join(os.homedir(), '.hive-mind', 'workspaces', mindKey.workspaceId, 'cognify.watermark');
+  return path.join(dataDir, 'workspaces', mindKey.workspaceId, 'cognify.watermark');
 }
 
 function readWatermark(file: string): number {
@@ -67,7 +80,7 @@ export type CognifyExtractor = 'heuristic' | 'llm';
 export interface CognifyOptions {
   /**
    * Process frames with id > since. When undefined, defaults to the
-   * persisted watermark from `~/.hive-mind/cognify.watermark` (or 0).
+   * persisted watermark under the env's data dir (or 0).
    * Pass `0` explicitly together with `fullRescan: true` to force re-scan.
    */
   since?: number;
@@ -333,7 +346,7 @@ async function runCognifyOnPersonal(options: CognifyOptions): Promise<CognifyRes
     const r = await runCognifyOnMind(
       env.db.getDatabase(),
       env.kg,
-      watermarkPath('personal'),
+      watermarkPath('personal', env.dataDir),
       {
         since: options.since,
         limit: options.limit,
@@ -369,7 +382,7 @@ async function runCognifyOnWorkspace(workspaceId: string, options: CognifyOption
       return await runCognifyOnMind(
         wsDb.getDatabase(),
         wsKg,
-        watermarkPath({ workspaceId }),
+        watermarkPath({ workspaceId }, env.dataDir),
         {
         since: options.since,
         limit: options.limit,
@@ -398,7 +411,7 @@ async function runCognifyAllWorkspaces(options: CognifyOptions): Promise<Cognify
     const personal = await runCognifyOnMind(
       env.db.getDatabase(),
       env.kg,
-      watermarkPath('personal'),
+      watermarkPath('personal', env.dataDir),
       {
         since: options.since,
         limit: options.limit,
@@ -428,7 +441,7 @@ async function runCognifyAllWorkspaces(options: CognifyOptions): Promise<Cognify
           const r = await runCognifyOnMind(
             wsDb.getDatabase(),
             wsKg,
-            watermarkPath({ workspaceId: ws.id }),
+            watermarkPath({ workspaceId: ws.id }, env.dataDir),
             {
         since: options.since,
         limit: options.limit,
