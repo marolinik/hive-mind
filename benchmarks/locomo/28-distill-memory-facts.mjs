@@ -26,7 +26,7 @@ const RUN_ALL_FILE = resolve(__dirname, 'data', 'RUN-all.json');
 const DATASET = resolve(__dirname, 'data', 'locomo10.json');
 const OUT_LOG = resolve(__dirname, 'data', 'distilled-facts.jsonl');
 
-const HIVE_MIND_ROOT = 'D:/Projects/hive-mind';
+const HIVE_MIND_ROOT = process.env.HIVE_MIND_ROOT ?? resolve(__dirname, '..', '..');
 const FRAMES_URL = pathToFileURL(`${HIVE_MIND_ROOT}/packages/core/dist/mind/frames.js`).href;
 const DB_URL = pathToFileURL(`${HIVE_MIND_ROOT}/packages/core/dist/mind/db.js`).href;
 

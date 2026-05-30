@@ -32,7 +32,7 @@ const DATA_DIR_LOCAL = resolve(__dirname, 'data');
 const RUN_FILE = resolve(DATA_DIR_LOCAL, 'RUN.json');
 const DATASET_FILE = resolve(DATA_DIR_LOCAL, 'locomo10.json');
 
-const HIVE_MIND_ROOT = 'D:/Projects/hive-mind';
+const HIVE_MIND_ROOT = process.env.HIVE_MIND_ROOT ?? resolve(__dirname, '..', '..');
 const FRAMES_URL = pathToFileURL(`${HIVE_MIND_ROOT}/packages/core/dist/mind/frames.js`).href;
 const DB_URL = pathToFileURL(`${HIVE_MIND_ROOT}/packages/core/dist/mind/db.js`).href;
 

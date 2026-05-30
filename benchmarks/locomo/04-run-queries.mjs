@@ -32,7 +32,7 @@ const DATASET_FILE = resolve(DATA_DIR_LOCAL, 'locomo10.json');
 const OUT_DIR = resolve(DATA_DIR_LOCAL, 'queries');
 const OUT_FILE = resolve(OUT_DIR, 'queries.jsonl');
 
-const HIVE_MIND_ROOT = 'D:/Projects/hive-mind';
+const HIVE_MIND_ROOT = process.env.HIVE_MIND_ROOT ?? resolve(__dirname, '..', '..');
 const SETUP_URL = pathToFileURL(`${HIVE_MIND_ROOT}/packages/cli/dist/setup.js`).href;
 const RECALL_URL = pathToFileURL(`${HIVE_MIND_ROOT}/packages/cli/dist/commands/recall-context.js`).href;
 

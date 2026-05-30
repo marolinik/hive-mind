@@ -14,7 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RUN_ALL_FILE = resolve(__dirname, 'data', 'RUN-all.json');
 
-const HIVE_MIND_ROOT = 'D:/Projects/hive-mind';
+const HIVE_MIND_ROOT = process.env.HIVE_MIND_ROOT ?? resolve(__dirname, '..', '..');
 const MAINTENANCE_URL = pathToFileURL(`${HIVE_MIND_ROOT}/packages/cli/dist/commands/maintenance.js`).href;
 
 async function main() {
