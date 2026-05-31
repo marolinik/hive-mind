@@ -22,7 +22,7 @@ Runs locally. Zero cloud dependency.
 ## Features
 
 - **21 MCP tools** -- plug into Claude Code, Codex, Hermes, or any MCP-compatible client
-- **11 harvest adapters** -- ingest from ChatGPT, Claude, Claude Code, Gemini, Perplexity, PDF, Markdown, plain text, URL, and universal formats
+- **10 harvest adapters** -- ingest from ChatGPT, Claude, Claude Code, Gemini, Perplexity, PDF, Markdown, plain text, URL, and universal formats
 - **FTS5 + vector hybrid search** -- full-text and semantic search fused via Reciprocal Rank Fusion
 - **Knowledge graph** -- entities, relations, and bitemporal validity tracking
 - **I/P/B memory frames** -- intra-frame (facts), predicted-frame (hypotheses), bidirectional-frame (corrections) with automatic compaction
@@ -215,8 +215,8 @@ Automatic compaction merges superseded frames to keep the store lean.
 | `critical` | 2.0x | Core identity, hard constraints, user-stated rules |
 | `important` | 1.5x | Preferences, recurring patterns, project decisions |
 | `normal` | 1.0x | General facts, observations |
-| `temporary` | 0.5x | Session-local context, will decay |
-| `deprecated` | 0.0x | Superseded by corrections, kept for audit trail |
+| `temporary` | 0.7x | Session-local context, will decay |
+| `deprecated` | 0.3x | Superseded by corrections, kept for audit trail |
 
 ## Search Pipeline
 
@@ -234,21 +234,21 @@ factors in recency, importance, and access frequency.
 |---|---|---|
 | `recall_memory` | Memory | Search memory with hybrid FTS5 + vector |
 | `save_memory` | Memory | Persist a new memory frame |
-| `search_entities` | Knowledge | Search the knowledge graph |
-| `add_relation` | Knowledge | Add an entity relation |
-| `get_entity` | Knowledge | Get entity details and relations |
+| `search_entities` | Knowledge | Search the knowledge graph for entities and their relations |
+| `save_entity` | Knowledge | Create or update an entity (auto-dedupes by normalized name) |
+| `create_relation` | Knowledge | Create a relationship between two entities |
 | `get_identity` | Identity | Retrieve stored user identity |
 | `set_identity` | Identity | Update user identity fields |
 | `get_awareness` | Awareness | Get active tasks and state |
 | `set_awareness` | Awareness | Set an awareness item |
 | `clear_awareness` | Awareness | Clear expired/completed items |
 | `list_workspaces` | Workspace | List available memory workspaces |
-| `switch_workspace` | Workspace | Switch to a different workspace |
-| `harvest_conversations` | Harvest | Ingest AI conversation exports |
-| `harvest_status` | Harvest | Check harvest pipeline status |
+| `create_workspace` | Workspace | Create a new isolated-memory workspace |
+| `harvest_sources` | Harvest | List registered harvest sources and their sync status |
+| `harvest_import` | Harvest | Import conversation history (ChatGPT, Claude, Gemini, …) |
 | `ingest_source` | Ingest | Ingest a document, URL, or file |
-| `compact_memory` | Cleanup | Compact superseded frames |
-| `cleanup_deprecated` | Cleanup | Remove deprecated frames |
+| `cleanup_frames` | Cleanup | Compact stale frames, remove test pollution, reconcile indexes |
+| `cleanup_entities` | Cleanup | Remove noise/orphan entities, dedupe by normalized name |
 | `compile_wiki` | Wiki | Compile memory into wiki pages |
 | `search_wiki` | Wiki | Search compiled wiki pages |
 | `get_page` | Wiki | Retrieve a specific wiki page |
