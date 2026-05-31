@@ -6,6 +6,7 @@
 import { runRecallContext, renderRecallResult } from './commands/recall-context.js';
 import { runSaveSession } from './commands/save-session.js';
 import { runHarvestLocal, type HarvestSource } from './commands/harvest-local.js';
+import { runHarvest } from './commands/harvest.js';
 import { runCognify } from './commands/cognify.js';
 import { runCompileWiki } from './commands/compile-wiki.js';
 import { runMaintenance } from './commands/maintenance.js';
@@ -63,6 +64,22 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
         env,
       });
       return fmt === 'json' ? json(result) : renderRecallResult(result, 'plain');
+    }
+
+    case 'harvest': {
+      const result = await runHarvest({
+        root: typeof values['root'] === 'string' ? values['root'] : undefined,
+        dry: Boolean(values['dry']),
+        env,
+      });
+      if (fmt === 'json') return json(result);
+      const head = result.dryRun ? 'Harvest (dry run)' : 'Harvest complete';
+      return [
+        `${head}: ${result.filesFound} high-signal file(s) under ${result.root}`,
+        `  ${result.dryRun ? 'would write' : 'wrote'} ${result.framesWritten} frame(s) from ${result.filesProcessed} file(s)` +
+          (result.filesFailed ? `, ${result.filesFailed} failed` : ''),
+        result.projects.length ? `  projects: ${result.projects.join(', ')}` : '',
+      ].filter(Boolean).join('\n');
     }
 
     case 'save-session': {
