@@ -1,6 +1,6 @@
 {
   "name": "@hive-mind/cli",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Command-line tools for hive-mind: recall, save, harvest, compile-wiki, maintenance. Designed to run from SessionStart/Stop hooks and nightly cron.",
   "license": "Apache-2.0",
   "type": "module",
@@ -27,9 +27,9 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@hive-mind/core": "0.3.0",
-    "@hive-mind/mcp-server": "0.3.0",
-    "@hive-mind/wiki-compiler": "0.3.0"
+    "@hive-mind/core": "0.4.0",
+    "@hive-mind/mcp-server": "0.4.0",
+    "@hive-mind/wiki-compiler": "0.4.0"
   },
   "engines": {
     "node": ">=20"

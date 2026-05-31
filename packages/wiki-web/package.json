@@ -1,6 +1,6 @@
 {
   "name": "@hive-mind/wiki-web",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local read-only wiki UI for hive-mind. Browse entity, concept, and synthesis pages compiled from your memory frames.",
   "license": "Apache-2.0",
   "type": "module",
@@ -12,7 +12,7 @@
     "start": "node src/server.js"
   },
   "dependencies": {
-    "@hive-mind/enrichment": "0.3.0",
+    "@hive-mind/enrichment": "0.4.0",
     "express": "^4.21.0",
     "marked": "^14.1.4"
   },

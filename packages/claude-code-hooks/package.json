@@ -1,6 +1,6 @@
 {
   "name": "@hive-mind/claude-code-hooks",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Claude Code hooks for hive-mind: SessionStart, UserPromptSubmit, Stop, PreCompact, PostToolUse — in-loop memory + async synthesis.",
   "license": "Apache-2.0",
   "type": "module",
@@ -9,7 +9,7 @@
     "hive-mind-hooks": "bin/install.js"
   },
   "dependencies": {
-    "@hive-mind/enrichment": "0.3.0"
+    "@hive-mind/enrichment": "0.4.0"
   },
   "engines": {
     "node": ">=20"

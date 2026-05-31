@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-05-31
+
+Release-hardening + OSS hygiene. The repo now builds green, reproduces on any clean checkout, and ships real CI gates.
+
+### Fixed
+
+- **Cognify watermark now respects `HIVE_MIND_DATA_DIR`.** `watermarkPath()` (`packages/cli/src/commands/cognify.ts`) used `os.homedir()` and ignored the env's data dir, writing the cognify watermark to `~/.hive-mind` even when a custom data dir was configured — decoupling it from the actual DB. `dataDir` is now threaded through `watermarkPath()`; the production `~/.hive-mind` path is byte-identical.
+- **The 4 failing `dispatch.test.ts` tests are RESOLVED** (carried over from v0.2.0 — see the v0.3.0 "Known issues" below). Root cause was the process-global cognify watermark above leaking across test runs; the watermark fix makes the existing assertions pass. The suite is now **312/312 green, twice back-to-back**.
+- **Portable LoCoMo benchmarks.** 17 `benchmarks/locomo/*.mjs` scripts hardcoded `const HIVE_MIND_ROOT = 'D:/Projects/hive-mind'`, so the "reproduce" claim only held on one machine. Now `process.env.HIVE_MIND_ROOT ?? resolve(__dirname, '..', '..')`.
+
+### Changed
+
+- **Real CI gates.** `.github/workflows/ci.yml` ran `npm run lint --if-present` / `npm run typecheck --if-present` against scripts that did not exist, so both silently no-op'd. Added real `lint` (`eslint .` via a new flat `eslint.config.js`) and `typecheck` (`tsc --build`) scripts and dropped `--if-present`, making both hard gates. Fixed the 13 real lint findings surfaced — no rules weakened.
+- **npm publish hygiene** for `@hive-mind/enrichment`, `@hive-mind/wiki-web`, and `@hive-mind/claude-code-hooks` — explicit `files` allowlists so packed tarballs contain only intended files. (Closes the "npm publishing of the new packages" follow-up from v0.3.0.)
+
+### Added
+
+- **OSS health files** — `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `SECURITY.md` (private vulnerability reporting via GitHub Security Advisories), `.github/ISSUE_TEMPLATE/*` issue forms, `.github/PULL_REQUEST_TEMPLATE.md`, and `.github/dependabot.yml`.
+- **Agent-integration docs** — `AGENTS.md` (universal, tool-agnostic MCP integration guide), `CLAUDE.md` (Claude Code plugin + hooks + repo dev guide), `docs/INTEGRATIONS.md` (per-client setup for Claude Code, Claude Desktop, Codex, Cursor, Hermes, OpenClaw, and any generic MCP stdio client), and `docs/ARCHITECTURE.md`.
+- Corrected the README **MCP Tools Reference** table to match the 21 tools the server actually registers.
+
+[0.4.0]: https://github.com/marolinik/hive-mind/releases/tag/v0.4.0
+
 ## [0.3.0] - 2026-05-21
 
 Major release: Claude Code plugin + in-loop memory + local wiki UI + LoCoMo benchmark proof.
@@ -58,7 +81,9 @@ Major release: Claude Code plugin + in-loop memory + local wiki UI + LoCoMo benc
 - Cross-platform CI matrix (Windows / macOS) — still Linux-only.
 - npm publishing of the new packages (claude-code-hooks, enrichment, wiki-web) — currently workspace-only.
 
-### Known issues (pre-existing, carried over from v0.2.0)
+### Known issues (pre-existing, carried over from v0.2.0) — RESOLVED in 0.4.0
+
+> **Update (0.4.0):** all four tests now pass. Root cause was the process-global cognify watermark (`os.homedir()` instead of the env data dir) leaking across runs — fixed in 0.4.0. Suite is 312/312 green.
 
 4 failing tests in `packages/cli/src/dispatch.test.ts` — present on baseline `20bce16` (v0.2.0 commit) and unchanged by v0.3.0 work. All four are seeding-related failures where the test populates a fresh `.mind` file with frames but the dispatched CLI subcommand sees `frames: 0 / entities: 0`. Suspected root cause: path resolution or schema-bootstrap order between the test setup and the dispatch's `MindDB` instantiation. Tests affected:
 
