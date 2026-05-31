@@ -14,14 +14,19 @@ export interface CoreLogger {
 
 export function createCoreLogger(tag: string): CoreLogger {
   const prefix = `[hive-mind:${tag}]`;
+  // ALL diagnostics go to stderr. stdout is reserved for program data — CLI
+  // `--json` envelopes and the MCP stdio protocol — so a library log line on
+  // stdout corrupts machine consumers (e.g. `recall-context --json`). console.warn
+  // and console.error already target stderr; route info/debug there too rather
+  // than console.info/console.debug (which write to stdout).
   return {
     info: (msg, data) =>
-      data !== undefined ? console.info(prefix, msg, data) : console.info(prefix, msg),
+      data !== undefined ? console.error(prefix, msg, data) : console.error(prefix, msg),
     warn: (msg, data) =>
       data !== undefined ? console.warn(prefix, msg, data) : console.warn(prefix, msg),
     error: (msg, data) =>
       data !== undefined ? console.error(prefix, msg, data) : console.error(prefix, msg),
     debug: (msg, data) =>
-      data !== undefined ? console.debug(prefix, msg, data) : console.debug(prefix, msg),
+      data !== undefined ? console.error(prefix, msg, data) : console.error(prefix, msg),
   };
 }
