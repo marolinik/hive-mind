@@ -29,7 +29,8 @@
   },
   "files": [
     "src",
-    "bin",
+    "bin/synth-drain.js",
+    "bin/synth-queue.js",
     "README.md",
     "LICENSE",
     "NOTICE"
