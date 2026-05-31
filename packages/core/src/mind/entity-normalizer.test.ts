@@ -1,5 +1,30 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeEntityName, findDuplicates } from './entity-normalizer.js';
+import { normalizeEntityName, findDuplicates, isNoiseName } from './entity-normalizer.js';
+
+describe('isNoiseName', () => {
+  it('drops stop tokens, sub-4-char names, and single-word acronyms', () => {
+    expect(isNoiseName('')).toBe(true);
+    expect(isNoiseName('abc')).toBe(true); // < 4 chars
+    expect(isNoiseName('The')).toBe(true); // stop token
+    expect(isNoiseName('Update')).toBe(true); // capitalized verb stop token
+    expect(isNoiseName('Monday')).toBe(true); // weekday stop token
+    expect(isNoiseName('JSON')).toBe(true); // all-caps acronym <= 6
+    expect(isNoiseName('HTTP')).toBe(true);
+  });
+
+  it('keeps real multi-word and longer entities', () => {
+    expect(isNoiseName('Acme Corp')).toBe(false);
+    expect(isNoiseName('PostgreSQL')).toBe(false);
+    expect(isNoiseName('hive-mind')).toBe(false);
+    expect(isNoiseName('Voyage')).toBe(false);
+  });
+
+  it('keeps allowlisted real short tech names (documented .harvest equivalence delta)', () => {
+    for (const n of ['npm', 'Go', 'Vue', 'Bun', 'Zod', 'AI', 'ML']) {
+      expect(isNoiseName(n), `${n} should be kept`).toBe(false);
+    }
+  });
+});
 
 describe('normalizeEntityName', () => {
   it('resolves known aliases to their canonical name', () => {

@@ -25,6 +25,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { isNoiseName } from './entity-normalizer.js';
 
 /** Canonical entity types the prompt asks the model to choose from. */
 export const LLM_ENTITY_TYPES = [
@@ -169,6 +170,10 @@ function parseJsonlOutput(raw: string, validFrameIds: Set<number>): ExtractedEnt
 
     const name = typeof parsed.name === 'string' ? parsed.name.trim() : '';
     if (name.length < 2) continue;
+    // Write-time noise filter: drop low-signal names (stop tokens, acronyms,
+    // sub-4-char non-allowlisted) so the LLM path can't leak noise into the
+    // graph the way the soft prompt instruction sometimes did.
+    if (isNoiseName(name)) continue;
 
     const rawType = typeof parsed.type === 'string' ? parsed.type.toLowerCase().trim() : 'concept';
     const type = (LLM_ENTITY_TYPES as readonly string[]).includes(rawType)

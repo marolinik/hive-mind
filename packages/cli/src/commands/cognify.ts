@@ -25,6 +25,7 @@ import * as path from 'node:path';
 import { openPersonalMind, resolveDataDir, type CliEnv } from '../setup.js';
 import {
   normalizeEntityName,
+  isNoiseName,
   MindDB,
   KnowledgeGraph,
   extractEntitiesViaLLM,
@@ -140,46 +141,9 @@ export interface CognifyResult {
 const ENTITY_PATTERN = /\b([A-Z][a-zA-Z]+(?:\s+(?:de|of|&)\s+|\s+)[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\b/g;
 const SIMPLE_ENTITY_PATTERN = /\b([A-Z][a-zA-Z]{2,})\b/g;
 
-// Skip common sentence-starts, pronouns, dev jargon, and date tokens that
-// the naive regex catches. Pre-tightening, the dominant noise sources were
-// (1) acronyms — API, CLI, JSON, HTTP, MCP, SQL — handled by isLikelyAcronym,
-// (2) single capitalized verbs at sentence/line start (Add, Update, Run),
-// (3) weekday/month abbreviations from log lines and timestamps.
-const STOP_TOKENS = new Set([
-  // sentence-starts and pronouns
-  'The', 'This', 'That', 'These', 'Those', 'When', 'Where', 'Why', 'How',
-  'What', 'Who', 'Which', 'If', 'And', 'But', 'Or', 'So', 'For', 'Nor',
-  'Yet', 'As', 'At', 'By', 'On', 'In', 'To', 'From', 'With', 'Without',
-  'Into', 'Onto', 'Upon', 'Over', 'Under', 'Between', 'Among',
-  // common verbs that get capitalized at sentence start, in API names,
-  // commit messages, or log prefixes
-  'Add', 'Remove', 'Set', 'Get', 'Update', 'Delete', 'Create', 'List',
-  'Search', 'Find', 'Run', 'Build', 'Use', 'Make', 'Test', 'Check',
-  'Read', 'Write', 'Edit', 'Save', 'Load', 'Open', 'Close', 'Start',
-  'Stop', 'Show', 'Hide', 'Push', 'Pull', 'Fix', 'Done', 'Skip',
-  'Wait', 'Try', 'Note', 'Warn', 'Info', 'Debug', 'Trace',
-  'Todo', 'Fixme', 'Should', 'Could', 'Would', 'Must', 'Will', 'Shall',
-  'Can', 'May', 'Might',
-  // days
-  'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
-  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
-  // months
-  'Jan', 'Feb', 'Mar', 'Apr', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct',
-  'Nov', 'Dec',
-  'January', 'February', 'March', 'April', 'June', 'July',
-  'August', 'September', 'October', 'November', 'December',
-]);
-
-// All-caps tokens up to 6 chars are almost always acronyms (API, CLI, JSON,
-// HTTP, MCP, SQL, AWS, GCP, URL, UUID). Treat as too-low-signal to surface
-// as entities — they're typically formatting artefacts, not subjects.
-function isLikelyAcronym(s: string): boolean {
-  return /^[A-Z]+$/.test(s) && s.length <= 6;
-}
-
 // Optional escape hatch: HIVE_MIND_COGNIFY_NO_SINGLE_WORD=1 disables the
 // single-word pass entirely so only multi-word phrases become entities.
-// Use when even tightened single-word extraction is too noisy for your corpus.
+// Use when even the shared noise filter is too permissive for your corpus.
 function singleWordPassEnabled(): boolean {
   return process.env.HIVE_MIND_COGNIFY_NO_SINGLE_WORD !== '1';
 }
@@ -193,14 +157,13 @@ function extractCandidateEntities(text: string): string[] {
     if (candidate.length >= 4) seen.add(candidate);
   }
 
-  // Single-word candidates — apply expanded filters (or skip entirely
-  // when the env-var escape hatch is set).
+  // Single-word candidates — gated by the shared write-time noise filter
+  // (stop tokens, sub-4-char, single-word acronyms; tech allowlist preserved).
+  // STOP_TOKENS/isLikelyAcronym now live in @hive-mind/core (one definition).
   if (!singleWordPassEnabled()) return [...seen];
   for (const match of text.matchAll(SIMPLE_ENTITY_PATTERN)) {
     const candidate = match[1].trim();
-    if (candidate.length < 4) continue;
-    if (STOP_TOKENS.has(candidate)) continue;
-    if (isLikelyAcronym(candidate)) continue;
+    if (isNoiseName(candidate)) continue;
     seen.add(candidate);
   }
 
@@ -295,6 +258,9 @@ async function runCognifyOnMind(
     const sourceTag = extractor === 'llm' ? 'cognify-llm' : 'cognify';
 
     for (const cand of candidates) {
+      // Write-time noise filter at the create-entity seam: applies to BOTH the
+      // heuristic and LLM paths so low-signal names never enter the graph.
+      if (isNoiseName(cand.name)) continue;
       const normalized = normalizeEntityName(cand.name);
       if (normalized.length < 3) continue;
 

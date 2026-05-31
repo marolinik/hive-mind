@@ -123,7 +123,7 @@ export type {
 } from './mind/knowledge.js';
 export { Ontology, validateEntity } from './mind/ontology.js';
 export type { EntitySchema, ValidationResult } from './mind/ontology.js';
-export { normalizeEntityName, findDuplicates } from './mind/entity-normalizer.js';
+export { normalizeEntityName, findDuplicates, isNoiseName, isLikelyAcronym } from './mind/entity-normalizer.js';
 export type { EntityRef } from './mind/entity-normalizer.js';
 export { ConceptTracker, CONCEPT_MASTERY_TABLE_SQL } from './mind/concept-tracker.js';
 export type { ConceptEntry, ConceptUpdate } from './mind/concept-tracker.js';
