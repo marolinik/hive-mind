@@ -6,6 +6,22 @@
 
 See [`RESULTS.md`](./RESULTS.md) for the full headline numbers, per-category breakdown, statistical caveats, and cost actuals.
 
+### Reproduce offline (no API keys, no cost)
+
+The trio-strict result is committed as a regression baseline. Re-derive it from the
+checked-in judgments with zero API calls:
+
+```bash
+node benchmarks/locomo/rescore.mjs
+# → Trio-strict 217/320 = 67.8% · majority 224/320 = 70.0% · exit 0
+```
+
+It verifies artifact integrity (sha256), independently recomputes every per-row verdict,
+and asserts the aggregate / per-category / per-judge tallies. See
+[`artifacts/`](./artifacts/) for the data, provenance, and pinned hashes. (Regenerating
+the answers + judgments from scratch via the numbered scripts below needs API keys and
+~$9–13; the rescore needs neither.)
+
 ---
 
 ## What this benchmark measures

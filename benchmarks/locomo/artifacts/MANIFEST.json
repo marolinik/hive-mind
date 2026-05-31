@@ -1,0 +1,71 @@
+{
+  "description": "Canonical, committed LoCoMo v5 trio-strict reproducibility artifacts. `node benchmarks/locomo/rescore.mjs` re-derives the headline numbers below offline from these files with ZERO API calls. This is the regression baseline for the substrate's benchmark claim.",
+  "benchmark": "LoCoMo (Long Conversation Memory)",
+  "run": "v5 — Claude Opus 4.7 as benchmark subject, trio-strict re-judge (2026-05-21, v2 post-parser-fix)",
+  "dataset": {
+    "name": "snap-research/locomo locomo10.json",
+    "source_url": "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json",
+    "sha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+    "git_blob_sha": "d95b872480b413d935821fdc3c84f8a8f5f29e73",
+    "bytes": 2805274
+  },
+  "sample": {
+    "n": 320,
+    "stratification": "80 per category across [multi-hop, temporal, open-ended, single-hop]; adversarial (category 5) excluded",
+    "seed": 42,
+    "algorithm": "xorshift32(seed=42) + Fisher-Yates per bucket; bucket order [1,2,3,4]; sort by instance_id asc",
+    "category_map": { "1": "multi-hop", "2": "temporal", "3": "open-ended", "4": "single-hop", "5": "adversarial" }
+  },
+  "judges": {
+    "opus": "claude-opus-4-7",
+    "gpt": "gpt-5.5-2026-04-23",
+    "mm": "MiniMax-M2.7",
+    "prompt": "Mem0 verbatim 'be generous' accuracy prompt",
+    "trio_strict_rule": "CORRECT only when ALL THREE judges return CORRECT (logical AND). A row where any judge fails to parse is excluded (counted as not-correct; denominator stays 320).",
+    "trio_majority_rule": "CORRECT when >=2 of 3 judges return CORRECT; parse-failure rows excluded (counted as not-correct)."
+  },
+  "expected": {
+    "n": 320,
+    "trio_strict": { "correct": 217, "pct": 67.8 },
+    "trio_majority": { "correct": 224, "pct": 70.0 },
+    "self_judge_opus_reference": { "correct": 234, "pct": 73.1 },
+    "parse_failures": 4,
+    "per_category_strict": {
+      "single-hop": [70, 80],
+      "multi-hop": [49, 80],
+      "temporal": [52, 80],
+      "open-ended": [46, 80]
+    },
+    "per_judge_correct": { "opus": 230, "gpt": 223, "mm": 236 }
+  },
+  "artifacts": {
+    "trio-judgments-v5-retrieval.v2.jsonl": {
+      "role": "canonical per-row trio judgments (the rescore input)",
+      "rows": 320,
+      "sha256": "3fa240eede4dbc49ddf2be51f238cd2463d1c158b9e07ee01305fb3f4ba9ceea"
+    },
+    "cell-retrieval-v5-claude.jsonl": {
+      "role": "provenance — the v5 retrieval answers that were judged",
+      "rows": 320,
+      "sha256": "3d58105c4e274017f20dde175a33434a7c59696b4677eff84d81a5e9d1701627"
+    },
+    "sample-cells-23-N320.jsonl": {
+      "role": "provenance — the N=320 stratified question sample (the test set)",
+      "rows": 320,
+      "sha256": "f358a44e6031257073a86a0c03bbc51b31e1698d12796dcbe5eecf98713fb6e8"
+    },
+    "dataset-MANIFEST.json": {
+      "role": "upstream LoCoMo dataset provenance (SHA + shape)",
+      "sha256": "b009b65dfeff4bace53fdb794e0cb71f5b7a94ead7b9e884e2a59893d11c722d"
+    },
+    "sample-MANIFEST.json": {
+      "role": "sampling provenance (seed + algorithm + per-bucket SHAs)",
+      "sha256": "3ccd0e4c5f87c6cd34e769734f81c415e4f01f0a8052005031c4eeee4087a0e6"
+    }
+  },
+  "rescore": {
+    "command": "node benchmarks/locomo/rescore.mjs",
+    "network": "none — pure file read + arithmetic",
+    "exit_codes": { "0": "all expected numbers reproduced", "1": "mismatch (artifact tampered or algorithm drift)" }
+  }
+}

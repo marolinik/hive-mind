@@ -1,0 +1,37 @@
+{
+  "source_url": "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json",
+  "git_blob_sha": "d95b872480b413d935821fdc3c84f8a8f5f29e73",
+  "sha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+  "bytes": 2805274,
+  "fetched_at": "2026-05-08T09:50:24.749Z",
+  "shape": {
+    "top_level": "array(10)",
+    "conversation_count": 10,
+    "conv0_keys": [
+      "qa",
+      "conversation",
+      "event_summary",
+      "observation",
+      "session_summary",
+      "sample_id"
+    ],
+    "conv0_session_keys": [
+      "session_summary"
+    ],
+    "conv0_qa_field": "qa",
+    "conv0_qa_count": 199,
+    "conv0_qa_keys": [
+      "question",
+      "answer",
+      "evidence",
+      "category"
+    ],
+    "conv0_qa_categories": [
+      "2",
+      "3",
+      "1",
+      "4",
+      "5"
+    ]
+  }
+}

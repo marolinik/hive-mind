@@ -1,0 +1,33 @@
+{
+  "created_at": "2026-05-08T11:09:40.205Z",
+  "dataset_sha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4",
+  "seed": 42,
+  "algorithm": "xorshift32(seed=42) + Fisher-Yates per bucket; bucket iteration order [1,2,3,4]; sort by instance_id ascending; verbatim from waggle-os/benchmarks/harness/scripts/build-preflight-samples.ts:101-119",
+  "category_map": {
+    "1": "multi-hop",
+    "2": "temporal",
+    "3": "open-ended",
+    "4": "single-hop",
+    "5": "adversarial"
+  },
+  "excluded_categories": [
+    5
+  ],
+  "bucket_eligible_counts": {
+    "1": 281,
+    "2": 320,
+    "3": 89,
+    "4": 841
+  },
+  "per_category_pool": 100,
+  "per_category_cells_2_3": 20,
+  "total_qas_seen": 1986,
+  "skipped_adversarial": 446,
+  "skipped_no_evidence": 4,
+  "skipped_unresolvable": 5,
+  "n_pool": 389,
+  "n_cells_2_3": 80,
+  "pool_sha256": "0114e0f9d4f3863490b4c84e69c8a1ee2038feba363c92a02635bc2299296cad",
+  "cells_2_3_sha256": "0c05591b9a67ed4adce81c539b4b3695acfccb1e525a0eb2903941f3a841ed91",
+  "note": "NOT byte-identical to the manifest v6 N=400 fixture (which was not committed to disk). The algorithm and seed are the same, so per-bucket selection order is deterministic and replicable."
+}
