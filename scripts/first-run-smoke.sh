@@ -52,11 +52,32 @@ ok "repo root: $REPO_ROOT"
 
 # ---- install + build ---------------------------------------------------------
 
-step "Installing workspaces (npm ci if lockfile present, else npm install)"
-if [[ -f package-lock.json ]]; then
-  npm ci --include=optional
-else
-  npm install --include=optional
+# Install workspaces. We prefer `npm ci` for lockfile determinism, but on
+# Windows `npm ci` deletes node_modules first and can hit EPERM when a native
+# binary (better-sqlite3, sqlite-vec) is locked by a prior run -- that failure
+# also strips the @hive-mind/* workspace symlinks and bricks the CLI until a
+# manual reinstall. So on Windows we use `npm install`, and on any failure we
+# surface a recovery hint. (CI's lockfile-determinism gate is the separate
+# build-test matrix, which runs `npm ci` directly -- unaffected by this.)
+install_workspaces() {
+  local uname_s
+  uname_s="$(uname -s 2>/dev/null || echo unknown)"
+  if [[ "${OS:-}" == "Windows_NT" || "$uname_s" == MINGW* || "$uname_s" == MSYS* || "$uname_s" == CYGWIN* ]]; then
+    npm install --include=optional
+  elif [[ -f package-lock.json ]]; then
+    npm ci --include=optional
+  else
+    npm install --include=optional
+  fi
+}
+
+step "Installing workspaces"
+if ! install_workspaces; then
+  warn "workspace install failed. If npm ci wiped node_modules on Windows:"
+  warn "  1. close any running hive-mind processes (MCP server, CLI, editors holding .node files)"
+  warn "  2. rm -rf node_modules"
+  warn "  3. npm install"
+  fail "workspace install failed (see recovery steps above)"
 fi
 
 step "Building all packages"
