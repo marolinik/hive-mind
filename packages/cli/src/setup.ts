@@ -170,6 +170,13 @@ export function openPersonalMind(dataDir: string = resolveDataDir()): CliEnv {
 
   const getReranker = async (): Promise<Reranker | undefined> => {
     if (_reranker !== null) return _reranker ?? undefined;
+    // Opt-out for CI / headless / resource-constrained environments: skip the
+    // ~87MB ONNX cross-encoder load entirely. Reranking is an optional
+    // re-ordering of the RRF survivors — search still works without it.
+    if (process.env.HIVE_MIND_NO_RERANK === '1' || process.env.HIVE_MIND_NO_RERANK === 'true') {
+      _reranker = undefined;
+      return undefined;
+    }
     try {
       _reranker = await createInProcessReranker({
         cacheDir: path.join(dataDir, 'models'),

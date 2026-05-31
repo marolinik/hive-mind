@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,6 +10,26 @@ import { runMcpCall } from './commands/mcp-call.js';
 describe('cli dispatch', () => {
   let dataDir: string;
   let env: CliEnv;
+
+  // Keep these CLI-plumbing tests hermetic + fast. Default recall-context loads
+  // the ~87MB ONNX cross-encoder reranker (getReranker) and probes Ollama for an
+  // embedder — both add seconds + ML/network nondeterminism that intermittently
+  // blew the 10s test timeout. Pin to no-reranker + the deterministic mock
+  // embedder; recall still works (FTS keyword search carries the hits).
+  const savedEnv: Record<string, string | undefined> = {};
+  beforeAll(() => {
+    for (const k of ['HIVE_MIND_NO_RERANK', 'HIVE_MIND_EMBEDDING_PROVIDER']) {
+      savedEnv[k] = process.env[k];
+    }
+    process.env.HIVE_MIND_NO_RERANK = '1';
+    process.env.HIVE_MIND_EMBEDDING_PROVIDER = 'mock';
+  });
+  afterAll(() => {
+    for (const [k, v] of Object.entries(savedEnv)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
 
   beforeEach(() => {
     dataDir = mkdtempSync(join(tmpdir(), 'hmind-cli-dispatch-'));
@@ -59,6 +79,12 @@ describe('cli dispatch', () => {
       positionals: [],
       env,
     })).rejects.toThrow(/requires a query/);
+  });
+
+  it('getReranker() is disabled by HIVE_MIND_NO_RERANK (skips the heavy model load)', async () => {
+    // With the env knob set (beforeAll), the reranker must NOT load — it returns
+    // undefined immediately rather than pulling the ~87MB ONNX cross-encoder.
+    expect(await env.getReranker()).toBeUndefined();
   });
 
   it('save-session from --file persists an I-Frame', async () => {
