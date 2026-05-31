@@ -16,8 +16,8 @@
  * Scrub: none — this module has no proprietary dependencies.
  */
 
-import { createHash } from 'node:crypto';
 import type { MindDB } from './db.js';
+import { hashFrameContent } from './content-hash.js';
 
 /** Strict ISO-8601 check used by `createIFrame` to decide whether to honor
  *  a caller-supplied `createdAt`. Requires the `T` separator and a
@@ -107,19 +107,20 @@ export class FrameStore {
     // timestamps that break range queries. `last_accessed` mirrors
     // `created_at` on initial insert for consistency.
     const useProvidedTs = typeof createdAt === 'string' && isValidIsoTimestamp(createdAt);
+    const contentHash = hashFrameContent(content);
     const result = useProvidedTs
       ? raw
           .prepare(
-            `INSERT INTO memory_frames (frame_type, gop_id, t, base_frame_id, content, importance, source, created_at, last_accessed)
-             VALUES ('I', ?, ?, NULL, ?, ?, ?, ?, ?)`,
+            `INSERT INTO memory_frames (frame_type, gop_id, t, base_frame_id, content, importance, source, created_at, last_accessed, content_hash)
+             VALUES ('I', ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
           )
-          .run(gopId, t, content, importance, source, createdAt, createdAt)
+          .run(gopId, t, content, importance, source, createdAt, createdAt, contentHash)
       : raw
           .prepare(
-            `INSERT INTO memory_frames (frame_type, gop_id, t, base_frame_id, content, importance, source)
-             VALUES ('I', ?, ?, NULL, ?, ?, ?)`,
+            `INSERT INTO memory_frames (frame_type, gop_id, t, base_frame_id, content, importance, source, content_hash)
+             VALUES ('I', ?, ?, NULL, ?, ?, ?, ?)`,
           )
-          .run(gopId, t, content, importance, source);
+          .run(gopId, t, content, importance, source, contentHash);
 
     const frame = raw
       .prepare('SELECT * FROM memory_frames WHERE id = ?')
@@ -139,10 +140,10 @@ export class FrameStore {
     const raw = this.db.getDatabase();
     const result = raw
       .prepare(
-        `INSERT INTO memory_frames (frame_type, gop_id, t, base_frame_id, content, importance, source)
-         VALUES ('P', ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO memory_frames (frame_type, gop_id, t, base_frame_id, content, importance, source, content_hash)
+         VALUES ('P', ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(gopId, t, baseFrameId, content, importance, source);
+      .run(gopId, t, baseFrameId, content, importance, source, hashFrameContent(content));
 
     const frame = raw
       .prepare('SELECT * FROM memory_frames WHERE id = ?')
@@ -165,10 +166,10 @@ export class FrameStore {
     const raw = this.db.getDatabase();
     const result = raw
       .prepare(
-        `INSERT INTO memory_frames (frame_type, gop_id, t, base_frame_id, content, importance)
-         VALUES ('B', ?, ?, ?, ?, 'normal')`,
+        `INSERT INTO memory_frames (frame_type, gop_id, t, base_frame_id, content, importance, content_hash)
+         VALUES ('B', ?, ?, ?, ?, 'normal', ?)`,
       )
-      .run(gopId, t, baseFrameId, bContent);
+      .run(gopId, t, baseFrameId, bContent, hashFrameContent(bContent));
 
     const frame = raw
       .prepare('SELECT * FROM memory_frames WHERE id = ?')
@@ -292,31 +293,22 @@ export class FrameStore {
    * Returns the existing frame if content hash matches, null otherwise.
    * If a duplicate is found, updates its access_count instead of creating a new frame.
    *
-   * Comparison is trim-stable — compares the SHA-256 of `content.trim()` (JS trim,
-   * strips all Unicode whitespace) against the SHA-256 of every stored frame's
-   * JS-trimmed content. No SQL `length()` pre-filter is used because SQLite's
-   * built-in `trim()` only strips the ASCII space character (0x20), which would
-   * mis-compare any content with trailing newlines, tabs, or carriage returns.
-   *
-   * NOTE: Only the last 500 frames are inspected as a cost bound. This is
-   * deliberate — hash-based dedup across an unbounded table would need a
-   * separate content_hash column with its own index. If a duplicate check
-   * matters beyond the recency window, callers should add their own
-   * gop_id-scoped guard.
+   * Comparison is trim-stable — matches on the SHA-256 of `content.trim()`
+   * (JS trim strips all Unicode whitespace) via the indexed `content_hash`
+   * column. `ORDER BY id DESC LIMIT 1` preserves the legacy "most-recent match
+   * wins" semantics; the lookup is global (no gop_id scope), matching the prior
+   * unbounded-scan behavior but without the 500-row recency cap.
    */
   findDuplicate(content: string): MemoryFrame | null {
-    const hash = createHash('sha256').update(content.trim()).digest('hex');
-    const existing = this.db
+    const hash = hashFrameContent(content);
+    const frame = this.db
       .getDatabase()
-      .prepare('SELECT * FROM memory_frames ORDER BY id DESC LIMIT 500')
-      .all() as MemoryFrame[];
+      .prepare('SELECT * FROM memory_frames WHERE content_hash = ? ORDER BY id DESC LIMIT 1')
+      .get(hash) as MemoryFrame | undefined;
 
-    for (const frame of existing) {
-      const frameHash = createHash('sha256').update(frame.content.trim()).digest('hex');
-      if (frameHash === hash) {
-        this.touch(frame.id);
-        return frame;
-      }
+    if (frame) {
+      this.touch(frame.id);
+      return frame;
     }
     return null;
   }
@@ -334,8 +326,8 @@ export class FrameStore {
     const newImportance = importance ?? existing.importance;
 
     raw
-      .prepare('UPDATE memory_frames SET content = ?, importance = ? WHERE id = ?')
-      .run(content, newImportance, id);
+      .prepare('UPDATE memory_frames SET content = ?, importance = ?, content_hash = ? WHERE id = ?')
+      .run(content, newImportance, hashFrameContent(content), id);
 
     raw.prepare('DELETE FROM memory_frames_fts WHERE rowid = ?').run(id);
     raw.prepare('INSERT INTO memory_frames_fts (rowid, content) VALUES (?, ?)').run(id, content);
@@ -432,7 +424,9 @@ export class FrameStore {
       const toMerge = pframes.slice(0, pframes.length - 5);
       const mergedContent = [latestI.content, ...toMerge.map((p) => p.content)].join('\n---\n');
 
-      raw.prepare('UPDATE memory_frames SET content = ? WHERE id = ?').run(mergedContent, latestI.id);
+      raw
+        .prepare('UPDATE memory_frames SET content = ?, content_hash = ? WHERE id = ?')
+        .run(mergedContent, hashFrameContent(mergedContent), latestI.id);
       raw.prepare('DELETE FROM memory_frames_fts WHERE rowid = ?').run(latestI.id);
       raw
         .prepare('INSERT INTO memory_frames_fts (rowid, content) VALUES (?, ?)')

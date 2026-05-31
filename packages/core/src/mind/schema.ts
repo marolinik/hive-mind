@@ -77,11 +77,14 @@ CREATE TABLE IF NOT EXISTS memory_frames (
   access_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   last_accessed TEXT NOT NULL DEFAULT (datetime('now')),
+  content_hash TEXT,
   FOREIGN KEY (gop_id) REFERENCES sessions(gop_id)
 );
 CREATE INDEX IF NOT EXISTS idx_frames_gop_t ON memory_frames (gop_id, t);
 CREATE INDEX IF NOT EXISTS idx_frames_type ON memory_frames (frame_type, gop_id);
 CREATE INDEX IF NOT EXISTS idx_frames_base ON memory_frames (base_frame_id);
+-- Indexed content hash for O(1) global dedup (replaces the legacy last-500 scan).
+CREATE INDEX IF NOT EXISTS idx_frames_content_hash ON memory_frames (content_hash);
 
 -- FTS5 for keyword search on frame content
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_frames_fts USING fts5(

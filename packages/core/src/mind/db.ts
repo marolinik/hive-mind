@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
 import { SCHEMA_SQL, VEC_TABLE_SQL, SCHEMA_VERSION } from './schema.js';
+import { hashFrameContent } from './content-hash.js';
 
 /**
  * MindDB — the SQLite-backed memory substrate for hive-mind.
@@ -78,10 +79,19 @@ export class MindDB {
   }
 
   private runMigrations(): void {
+    // Add columns that post-date older .mind files BEFORE re-applying SCHEMA_SQL.
+    // SCHEMA_SQL now creates idx_frames_content_hash over memory_frames.content_hash,
+    // so that column must exist first or the index creation throws "no such column".
+    //
+    // Provenance: `memory_frames.source` was added after the initial release.
+    // Old frames default to 'user_stated' (correct fallback for pre-provenance frames).
+    this.ensureColumn('memory_frames', 'source', "TEXT NOT NULL DEFAULT 'user_stated'");
+    // Dedup: `content_hash` backs the indexed dedup lookup (replaces the last-500 scan).
+    this.ensureColumn('memory_frames', 'content_hash', 'TEXT');
+
     // SCHEMA_SQL uses CREATE TABLE/INDEX IF NOT EXISTS throughout, so re-running
     // it against an existing database is safe and idempotent — it only creates
-    // what's missing. This handles the case where a new release introduces new
-    // tables that older .mind databases haven't seen yet.
+    // what's missing (now including idx_frames_content_hash, after the column add).
     this.applySql(SCHEMA_SQL);
 
     // VEC_TABLE_SQL also uses IF NOT EXISTS — re-applying ensures new vec
@@ -90,17 +100,32 @@ export class MindDB {
     // memory_frames_vec untouched.
     this.applySql(VEC_TABLE_SQL);
 
-    // Provenance: `memory_frames.source` was added after the initial release.
-    // Old frames default to 'user_stated' which is the correct fallback for
-    // frames persisted before provenance tracking existed.
-    const hasSourceCol = this.db
-      .prepare("SELECT COUNT(*) as cnt FROM pragma_table_info('memory_frames') WHERE name='source'")
-      .get() as { cnt: number };
-    if (hasSourceCol.cnt === 0) {
-      this.applySql(
-        "ALTER TABLE memory_frames ADD COLUMN source TEXT NOT NULL DEFAULT 'user_stated'"
-      );
+    // One-time backfill: populate content_hash for legacy rows that predate the
+    // column. Gated on the column being newly NULL, so it runs once per upgrade.
+    this.backfillContentHash();
+  }
+
+  /** Add a column to a table only if it isn't already present (idempotent migration). */
+  private ensureColumn(table: string, column: string, defn: string): void {
+    const present = this.db
+      .prepare(`SELECT COUNT(*) as cnt FROM pragma_table_info('${table}') WHERE name = ?`)
+      .get(column) as { cnt: number };
+    if (present.cnt === 0) {
+      this.applySql(`ALTER TABLE ${table} ADD COLUMN ${column} ${defn}`);
     }
+  }
+
+  /** Backfill memory_frames.content_hash for rows inserted before the column existed. */
+  private backfillContentHash(): void {
+    const rows = this.db
+      .prepare('SELECT id, content FROM memory_frames WHERE content_hash IS NULL')
+      .all() as { id: number; content: string }[];
+    if (rows.length === 0) return;
+    const update = this.db.prepare('UPDATE memory_frames SET content_hash = ? WHERE id = ?');
+    const tx = this.db.transaction((items: { id: number; content: string }[]) => {
+      for (const r of items) update.run(hashFrameContent(r.content), r.id);
+    });
+    tx(rows);
   }
 
   getDatabase(): DatabaseType {

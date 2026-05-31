@@ -172,4 +172,64 @@ describe('FrameStore', () => {
     expect(stats.byImportance.important).toBe(1);
     expect(stats.byImportance.normal).toBe(2);
   });
+
+  it('dedups identical content even when the original is far outside the recent-500 window', () => {
+    // The old scan-based findDuplicate only looked at the last 500 frames, so an
+    // identical frame buried deeper silently re-inserted. The content_hash index
+    // makes dedup global. This is the key regression for the scan→index swap.
+    const original = frames.createIFrame('gop-test', 'needle in a haystack');
+    for (let i = 0; i < 600; i++) {
+      frames.createIFrame('gop-test', `filler content number ${i}`);
+    }
+    const redup = frames.createIFrame('gop-test', 'needle in a haystack');
+    expect(redup.id).toBe(original.id);
+  });
+
+  it('dedups content regardless of surrounding whitespace (trim-equivalent)', () => {
+    const a = frames.createIFrame('gop-test', 'trimmed body');
+    const b = frames.createIFrame('gop-test', '   trimmed body\n');
+    expect(b.id).toBe(a.id);
+  });
+
+  it('update() rewrites the content hash so dedup tracks the new content', () => {
+    const a = frames.createIFrame('gop-test', 'alpha payload');
+    frames.update(a.id, 'beta payload');
+    // New content now dedups to A...
+    const reBeta = frames.createIFrame('gop-test', 'beta payload');
+    expect(reBeta.id).toBe(a.id);
+    // ...and the OLD content must NOT dedup to A (stale-hash guard).
+    const reAlpha = frames.createIFrame('gop-test', 'alpha payload');
+    expect(reAlpha.id).not.toBe(a.id);
+  });
+
+  it('maintains a content_hash index used by the dedup lookup', () => {
+    const raw = db.getDatabase();
+    const idx = raw
+      .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_frames_content_hash'")
+      .all();
+    expect(idx).toHaveLength(1);
+    const plan = raw
+      .prepare(
+        'EXPLAIN QUERY PLAN SELECT * FROM memory_frames WHERE content_hash = ? ORDER BY id DESC LIMIT 1',
+      )
+      .all('anyhash') as { detail: string }[];
+    expect(plan.some((p) => /idx_frames_content_hash/.test(p.detail))).toBe(true);
+  });
+
+  it('backfills content_hash for legacy frames on open and dedups against them', () => {
+    const a = frames.createIFrame('gop-test', 'legacy row body');
+    // Simulate a pre-migration DB row with no hash.
+    db.getDatabase().prepare('UPDATE memory_frames SET content_hash = NULL WHERE id = ?').run(a.id);
+    db.close();
+    // Reopen → runMigrations should backfill the missing hash.
+    db = new MindDB(dbPath);
+    frames = new FrameStore(db);
+    const row = db
+      .getDatabase()
+      .prepare('SELECT content_hash FROM memory_frames WHERE id = ?')
+      .get(a.id) as { content_hash: string | null };
+    expect(row.content_hash).toBeTruthy();
+    const redup = frames.createIFrame('gop-test', 'legacy row body');
+    expect(redup.id).toBe(a.id);
+  });
 });
