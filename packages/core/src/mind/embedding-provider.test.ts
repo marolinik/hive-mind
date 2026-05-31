@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { createEmbeddingProvider } from './embedding-provider.js';
+import {
+  createEmbeddingProvider,
+  capEmbedText,
+  maxEmbedCharsForModel,
+  reembedPerText,
+} from './embedding-provider.js';
+import type { Embedder } from './embeddings.js';
 
 describe('createEmbeddingProvider', () => {
   it('falls back to mock when provider=mock is requested explicitly', async () => {
@@ -74,5 +80,47 @@ describe('createEmbeddingProvider', () => {
     const second = await provider.reprobe();
     expect(second.availableProviders).toContain('mock');
     expect(Date.parse(second.probeTimestamp)).toBeGreaterThanOrEqual(Date.parse(first));
+  });
+});
+
+describe('embedding guards (oversized-frame truncation + skip-not-abort)', () => {
+  it('capEmbedText truncates only inputs over the limit', () => {
+    expect(capEmbedText('short', 6000)).toBe('short');
+    expect(capEmbedText('x'.repeat(6000), 6000)).toHaveLength(6000); // exactly at limit: unchanged
+    expect(capEmbedText('x'.repeat(20000), 6000)).toHaveLength(6000); // over limit: clamped
+  });
+
+  it('maxEmbedCharsForModel returns 24000 for 8k models and 6000 otherwise', () => {
+    expect(maxEmbedCharsForModel('nomic-embed-text')).toBe(6000);
+    expect(maxEmbedCharsForModel('voyage-3-lite')).toBe(6000);
+    expect(maxEmbedCharsForModel('deterministic-mock')).toBe(6000);
+    expect(maxEmbedCharsForModel('nomic-embed-text-8k')).toBe(24000);
+    expect(maxEmbedCharsForModel('custom (num_ctx 8192)')).toBe(24000);
+  });
+
+  it('reembedPerText degrades ONLY the failing text, not the whole batch', async () => {
+    // The regression: the provider used to mock-poison the WHOLE batch when one
+    // text made the backend throw. Per-text re-embed keeps the good ones real.
+    const realFirstByte = (t: string): Float32Array => {
+      const v = new Float32Array(4);
+      v[0] = t.length; // a "real" marker the mock can't produce for these strings
+      return v;
+    };
+    const embedder: Embedder = {
+      dimensions: 4,
+      async embed(t: string) {
+        if (t === 'POISON') throw new Error('backend rejected this input');
+        return realFirstByte(t);
+      },
+      async embedBatch() {
+        throw new Error('batch path not used in this test');
+      },
+    };
+
+    const out = await reembedPerText(embedder, ['alpha', 'POISON', 'betas'], 4);
+    expect(out).toHaveLength(3);
+    expect(out[0][0]).toBe(5); // 'alpha' embedded for real
+    expect(out[2][0]).toBe(5); // 'betas' embedded for real
+    expect(out[1][0]).not.toBe(6); // 'POISON' degraded to mock, NOT a real length-6 vector
   });
 });

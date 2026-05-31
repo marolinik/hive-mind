@@ -11,6 +11,8 @@ import {
   HybridSearch,
   MindDB,
   FrameStore,
+  maxEmbedCharsForModel,
+  capEmbedText,
   type EmbeddingProviderInstance,
 } from '@hive-mind/core';
 import { runCognify } from './cognify.js';
@@ -145,9 +147,10 @@ async function runReembedAllOnMind(db: MindDB, embedder: EmbeddingProviderInstan
   // (e.g. `nomic-embed-text-8k` = `FROM nomic-embed-text` + `PARAMETER num_ctx 8192`)
   // raise the limit to 8192 tokens (~24K chars). Keep a safe undershoot.
   const modelName = embedder.getStatus().modelName;
-  const MAX_EMBED_CHARS = /(-|_|\.)8k\b|num_ctx[^0-9]*8192/i.test(modelName) ? 24_000 : 6_000;
+  // Shared with the core embedding provider so the cap can never drift.
+  const MAX_EMBED_CHARS = maxEmbedCharsForModel(modelName);
   const f32ToBlob = (vec: Float32Array): Buffer => Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
-  const prepText = (s: string): string => (s.length > MAX_EMBED_CHARS ? s.slice(0, MAX_EMBED_CHARS) : s);
+  const prepText = (s: string): string => capEmbedText(s, MAX_EMBED_CHARS);
 
   let embedded = 0;
   let truncated = 0;

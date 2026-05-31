@@ -153,7 +153,12 @@ export type {
 
 // Embedding providers
 export type { Embedder } from './mind/embeddings.js';
-export { createEmbeddingProvider } from './mind/embedding-provider.js';
+export {
+  createEmbeddingProvider,
+  maxEmbedCharsForModel,
+  capEmbedText,
+  reembedPerText,
+} from './mind/embedding-provider.js';
 export type {
   EmbeddingProviderType,
   EmbeddingProviderConfig,
