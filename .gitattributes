@@ -1,0 +1,9 @@
+# LoCoMo reproducibility artifacts are sha256-pinned in
+# benchmarks/locomo/artifacts/MANIFEST.json and verified by rescore.mjs.
+# Disable end-of-line conversion so the bytes — and therefore the hashes —
+# are byte-identical on every platform. Without this, a Windows checkout with
+# core.autocrlf=true would smudge LF->CRLF in the working tree and break the
+# integrity check on a fresh clone.
+benchmarks/locomo/artifacts/*.jsonl               -text
+benchmarks/locomo/artifacts/dataset-MANIFEST.json -text
+benchmarks/locomo/artifacts/sample-MANIFEST.json  -text
