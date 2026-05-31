@@ -7,6 +7,7 @@ import { runRecallContext, renderRecallResult } from './commands/recall-context.
 import { runSaveSession } from './commands/save-session.js';
 import { runHarvestLocal, type HarvestSource } from './commands/harvest-local.js';
 import { runHarvest } from './commands/harvest.js';
+import { runDigest } from './commands/digest.js';
 import { runCognify } from './commands/cognify.js';
 import { runCompileWiki } from './commands/compile-wiki.js';
 import { runMaintenance } from './commands/maintenance.js';
@@ -80,6 +81,18 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
           (result.filesFailed ? `, ${result.filesFailed} failed` : ''),
         result.projects.length ? `  projects: ${result.projects.join(', ')}` : '',
       ].filter(Boolean).join('\n');
+    }
+
+    case 'digest': {
+      const result = await runDigest({
+        week: typeof values['week'] === 'string' ? values['week'] : undefined,
+        dryRun: Boolean(values['dry-run']),
+        env,
+      });
+      if (fmt === 'json') return json(result);
+      if (result.prompt !== undefined) return result.prompt; // --dry-run: emit the prompt verbatim
+      if (!result.digested) return `digest: ${result.reason} (week ${result.week})`;
+      return `digest: wrote ${result.outPath} (${result.totalFrames} frames + ${result.totalPages} pages, week ${result.week})`;
     }
 
     case 'save-session': {
