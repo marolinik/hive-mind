@@ -33,3 +33,7 @@ export { ClaudeCodeAdapter } from './claude-code-adapter.js';
 // Pipeline orchestrator (Wave 3C)
 export { HarvestPipeline } from './pipeline.js';
 export type { LLMCallFn, PipelineOptions } from './pipeline.js';
+
+// Harvest run lifecycle tracking (backported from Waggle OS — resume/interrupt support)
+export { HarvestRunStore } from './run-store.js';
+export type { HarvestRun, HarvestRunStatus } from './run-store.js';
