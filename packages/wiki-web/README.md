@@ -8,7 +8,7 @@ Local, read-only **wiki UI** for [hive-mind](https://github.com/marolinik/hive-m
 npx @hive-mind/wiki-web         # or: hive-mind-wiki
 ```
 
-Starts an Express server (default `http://localhost:4173`) that renders the pages produced by `@hive-mind/wiki-compiler` from your `~/.hive-mind` data dir. Set `HIVE_MIND_DATA_DIR` to point at a custom location.
+Starts an Express server (default `http://localhost:3717`, override with `PORT`) that renders the pages produced by `@hive-mind/wiki-compiler` from your `~/.hive-mind` data dir. Set `HIVE_MIND_DATA_DIR` to point at a custom location.
 
 ## What it shows
 
