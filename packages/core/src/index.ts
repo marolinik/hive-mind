@@ -54,7 +54,8 @@
 export const VERSION = '0.1.0';
 
 // Database substrate
-export { MindDB } from './mind/db.js';
+export { MindDB, EmbeddingDimMismatchError } from './mind/db.js';
+export type { EmbeddingFingerprint, FingerprintCheck } from './mind/db.js';
 export { SCHEMA_SQL, VEC_TABLE_SQL, SCHEMA_VERSION } from './mind/schema.js';
 
 // Memory frames

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync, existsSync } from 'node:fs';
-import { MindDB } from './db.js';
+import { MindDB, EmbeddingDimMismatchError } from './db.js';
 
 describe('MindDB', () => {
   let dbPath: string;
@@ -106,5 +106,45 @@ describe('MindDB', () => {
     db = new MindDB(dbPath);
     // No throw = migrations re-applied cleanly against existing schema.
     expect(db.getFirstRunAt()).not.toBeNull();
+  });
+
+  it('ensureEmbeddingFingerprint records the fingerprint on first call, then matches', () => {
+    const first = db!.ensureEmbeddingFingerprint({ provider: 'voyage', model: 'voyage-3-lite', dim: 1024 });
+    expect(first.status).toBe('recorded');
+    const second = db!.ensureEmbeddingFingerprint({ provider: 'voyage', model: 'voyage-3-lite', dim: 1024 });
+    expect(second.status).toBe('match');
+  });
+
+  it('ensureEmbeddingFingerprint throws EmbeddingDimMismatchError on a dimension change', () => {
+    db!.ensureEmbeddingFingerprint({ provider: 'voyage', model: 'voyage-3-lite', dim: 1024 });
+    expect(() =>
+      db!.ensureEmbeddingFingerprint({ provider: 'ollama', model: 'nomic-embed-text', dim: 768 }),
+    ).toThrow(EmbeddingDimMismatchError);
+    try {
+      db!.ensureEmbeddingFingerprint({ provider: 'ollama', model: 'nomic-embed-text', dim: 768 });
+    } catch (e) {
+      const msg = (e as Error).message;
+      expect(msg).toContain('1024'); // stored dim
+      expect(msg).toContain('768'); // runtime dim
+      expect(msg).toMatch(/reembed/i); // points at the remediation
+    }
+  });
+
+  it('ensureEmbeddingFingerprint warns but ALLOWS a same-dim model change', () => {
+    db!.ensureEmbeddingFingerprint({ provider: 'voyage', model: 'voyage-3-lite', dim: 1024 });
+    const changed = db!.ensureEmbeddingFingerprint({
+      provider: 'openai',
+      model: 'text-embedding-3-small',
+      dim: 1024,
+    });
+    expect(changed.status).toBe('model-changed');
+    expect(changed.storedModel).toBe('voyage-3-lite');
+    // Fingerprint is updated to the new model, so a repeat now matches.
+    const after = db!.ensureEmbeddingFingerprint({
+      provider: 'openai',
+      model: 'text-embedding-3-small',
+      dim: 1024,
+    });
+    expect(after.status).toBe('match');
   });
 });
