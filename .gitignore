@@ -24,3 +24,7 @@ test-fixtures/**/design_chats/
 # Local-only planning artifacts. The consolidation plan references proprietary
 # Waggle OS internals and absolute D:/ paths — it must never reach the public repo.
 .planning/
+
+# Recall-stress operator inputs/outputs — query sets reference a private corpus.
+benchmarks/recall-stress/queries.local.json
+benchmarks/recall-stress/*-results.md

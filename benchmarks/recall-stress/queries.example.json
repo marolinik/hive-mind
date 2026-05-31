@@ -1,0 +1,11 @@
+{
+  "profile": "balanced",
+  "minPrecision": 0.5,
+  "_comment": "Neutral example. Copy to queries.local.json (gitignored) and replace with queries that exercise YOUR seeded corpus. `expect` = substrings hoped for in the top-3 results; an empty `expect` marks an off-topic edge query that should surface nothing.",
+  "queries": [
+    { "cat": "concept", "q": "hybrid search reciprocal rank fusion", "expect": ["hybrid", "fusion"] },
+    { "cat": "concept", "q": "embedding provider fallback chain", "expect": ["embedding", "provider"] },
+    { "cat": "concept", "q": "I/P/B memory frame model", "expect": ["frame"] },
+    { "cat": "edge", "q": "quantum chromodynamics gauge boson", "expect": [] }
+  ]
+}
