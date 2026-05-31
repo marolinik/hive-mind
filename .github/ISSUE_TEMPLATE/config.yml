@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & Discussions (Q&A)
+    url: https://github.com/marolinik/hive-mind/discussions/categories/q-a
+    about: Ask questions, share ideas, and get help from the community. For usage questions, please use Discussions instead of opening an issue.
+  - name: Report a security vulnerability
+    url: https://github.com/marolinik/hive-mind/security/advisories/new
+    about: Please report security vulnerabilities privately via the Security tab, not as a public issue.

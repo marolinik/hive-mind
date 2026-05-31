@@ -1,0 +1,93 @@
+name: Bug report
+description: Report a defect in hive-mind so it can be reproduced and fixed.
+title: "bug: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please fill out the fields below so we can reproduce the issue quickly.
+        Search [existing issues](https://github.com/marolinik/hive-mind/issues) first to avoid duplicates.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear and concise description of the bug, including any error messages.
+      placeholder: When I run `npx @hive-mind/mcp-server`, the server exits immediately with ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Minimal, ordered steps to reproduce the behavior. Include exact commands and config where possible.
+      placeholder: |
+        1. Configure the MCP server with `{ "mcpServers": { "hive-mind": { "command": "npx", "args": ["@hive-mind/mcp-server"] } } }`
+        2. Call `recall_memory` with ...
+        3. Observe ...
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: input
+    id: hive-mind-version
+    attributes:
+      label: hive-mind package and version
+      description: Which `@hive-mind/*` package is affected, and at what version? (e.g. `@hive-mind/mcp-server@0.4.0`). Run `npm ls @hive-mind/mcp-server` or check `package.json` if unsure.
+      placeholder: "@hive-mind/mcp-server@0.4.0"
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: Output of `node --version`. hive-mind requires Node >= 20.
+      placeholder: "v20.11.1"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: OS and version (e.g. Windows 11, macOS 14.5, Ubuntu 24.04).
+      placeholder: "Windows 11 / macOS 14.5 / Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: embedding-provider
+    attributes:
+      label: Embedding provider
+      description: Which embedding provider is configured (HIVE_MIND_EMBEDDING_PROVIDER)?
+      options:
+        - "OpenAI (API)"
+        - "Voyage"
+        - "Ollama"
+        - "In-process (local)"
+        - "Not applicable / unsure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste any relevant log output, stack traces, or console errors. This will be rendered as code, so no backticks needed.
+      render: shell
+    validations:
+      required: false
