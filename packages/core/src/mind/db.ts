@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
 import * as sqliteVec from 'sqlite-vec';
-import { SCHEMA_SQL, VEC_TABLE_SQL, SCHEMA_VERSION } from './schema.js';
+import { SCHEMA_SQL, VEC_TABLE_SQL, SCHEMA_VERSION, vecTableSqlForDim } from './schema.js';
 import { hashFrameContent } from './content-hash.js';
 
 /** A persisted embedding fingerprint: which provider/model produced this .mind's
@@ -158,6 +158,43 @@ export class MindDB {
       return { status: 'model-changed', storedModel, storedProvider };
     }
     return { status: 'match' };
+  }
+
+  /** Force-write the embedding fingerprint. Used after a re-embed so the guard
+   *  matches the embedder that produced the new vectors. */
+  setEmbeddingFingerprint(fp: EmbeddingFingerprint): void {
+    this.setMeta('embedding_provider', fp.provider);
+    this.setMeta('embedding_model', fp.model);
+    this.setMeta('embedding_dim', String(fp.dim));
+  }
+
+  /** Read the recorded embedding fingerprint, or null if none recorded yet. */
+  getEmbeddingFingerprint(): EmbeddingFingerprint | null {
+    const dimRaw = this.getMeta('embedding_dim');
+    if (dimRaw === null) return null;
+    return {
+      provider: this.getMeta('embedding_provider') ?? 'unknown',
+      model: this.getMeta('embedding_model') ?? 'unknown',
+      dim: Number(dimRaw),
+    };
+  }
+
+  /**
+   * DROP + CREATE both vec tables at `dim` (vec0 columns can't be ALTERed) and
+   * update the stored dim. DESTRUCTIVE — existing vectors are discarded; the
+   * caller re-embeds afterward (maintenance --reembed-all / --rechunk-all). This
+   * is the remediation for an EmbeddingDimMismatchError.
+   */
+  recreateVecTables(dim: number): void {
+    const d = Math.trunc(dim);
+    const tx = this.db.transaction(() => {
+      this.db.exec(
+        'DROP TABLE IF EXISTS memory_frames_vec; DROP TABLE IF EXISTS memory_frame_chunks_vec;',
+      );
+      this.db.exec(vecTableSqlForDim(d));
+      this.setMeta('embedding_dim', String(d));
+    });
+    tx();
   }
 
   private runMigrations(): void {

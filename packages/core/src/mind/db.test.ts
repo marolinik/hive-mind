@@ -130,6 +130,43 @@ describe('MindDB', () => {
     }
   });
 
+  it('recreateVecTables rebuilds the vec tables at a new dimension', () => {
+    const raw = db!.getDatabase();
+    const v1024 = new Float32Array(1024);
+    raw
+      .prepare('INSERT INTO memory_frames_vec (rowid, embedding) VALUES (1, ?)')
+      .run(new Uint8Array(v1024.buffer));
+    expect((raw.prepare('SELECT COUNT(*) n FROM memory_frames_vec').get() as { n: number }).n).toBe(1);
+
+    db!.recreateVecTables(768);
+
+    // Old rows are gone and the column is now 768-dim.
+    expect((raw.prepare('SELECT COUNT(*) n FROM memory_frames_vec').get() as { n: number }).n).toBe(0);
+    const v768 = new Float32Array(768);
+    expect(() =>
+      raw
+        .prepare('INSERT INTO memory_frames_vec (rowid, embedding) VALUES (2, ?)')
+        .run(new Uint8Array(v768.buffer)),
+    ).not.toThrow();
+    expect(() =>
+      raw
+        .prepare('INSERT INTO memory_frames_vec (rowid, embedding) VALUES (3, ?)')
+        .run(new Uint8Array(v1024.buffer)),
+    ).toThrow(); // 1024 no longer fits the 768 column
+    // The stored dim fingerprint follows the recreation.
+    expect(db!.getEmbeddingFingerprint()?.dim).toBe(768);
+  });
+
+  it('setEmbeddingFingerprint / getEmbeddingFingerprint round-trip', () => {
+    expect(db!.getEmbeddingFingerprint()).toBeNull();
+    db!.setEmbeddingFingerprint({ provider: 'ollama', model: 'nomic-embed-text', dim: 768 });
+    expect(db!.getEmbeddingFingerprint()).toEqual({
+      provider: 'ollama',
+      model: 'nomic-embed-text',
+      dim: 768,
+    });
+  });
+
   it('ensureEmbeddingFingerprint warns but ALLOWS a same-dim model change', () => {
     db!.ensureEmbeddingFingerprint({ provider: 'voyage', model: 'voyage-3-lite', dim: 1024 });
     const changed = db!.ensureEmbeddingFingerprint({

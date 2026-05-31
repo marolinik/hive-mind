@@ -116,6 +116,11 @@ async function runReembedAllOnMind(db: MindDB, embedder: EmbeddingProviderInstan
   }
 
   const raw = db.getDatabase();
+  const activeFp = {
+    provider: status.activeProvider,
+    model: status.modelName,
+    dim: embedder.dimensions,
+  };
   const frames = raw
     .prepare("SELECT id, content FROM memory_frames WHERE importance != 'deprecated' ORDER BY id ASC")
     .all() as Array<{ id: number; content: string }>;
@@ -124,9 +129,20 @@ async function runReembedAllOnMind(db: MindDB, embedder: EmbeddingProviderInstan
     return { framesEmbedded: 0, activeProvider: status.activeProvider, modelName: status.modelName, durationMs: Date.now() - start };
   }
 
-  // Wipe in a single transaction so partial failure leaves the table empty
-  // (next reconcile would refill from the same provider — same end state).
-  raw.prepare('DELETE FROM memory_frames_vec').run();
+  // If the embedding dimension changed, vec0 columns can't be ALTERed — DROP +
+  // CREATE both vec tables at the new dim (the remediation for an
+  // EmbeddingDimMismatchError). Otherwise just wipe whole-frame vectors so a
+  // partial failure leaves the table empty (next reconcile refills it).
+  const stored = db.getEmbeddingFingerprint();
+  if (stored && stored.dim !== activeFp.dim) {
+    db.recreateVecTables(activeFp.dim);
+    process.stderr.write(
+      `[reembed-all] embedding dim changed ${stored.dim} → ${activeFp.dim}; recreated vec tables. ` +
+        `Run --rechunk-all to rebuild chunk vectors.\n`,
+    );
+  } else {
+    raw.prepare('DELETE FROM memory_frames_vec').run();
+  }
 
   // Batch embed in chunks of 32 — Ollama is fastest with small batches and
   // memory stays bounded. Use embedBatch to amortize HTTP overhead.
@@ -192,6 +208,10 @@ async function runReembedAllOnMind(db: MindDB, embedder: EmbeddingProviderInstan
   if (truncated > 0) {
     process.stderr.write(`[reembed-all] ${truncated} frame(s) > ${MAX_EMBED_CHARS} chars were truncated for embedding\n`);
   }
+
+  // Record the fingerprint of the embedder that produced these vectors so the
+  // dim guard matches (and a later model swap is detected) on the next open.
+  db.setEmbeddingFingerprint(activeFp);
 
   return {
     framesEmbedded: embedded,

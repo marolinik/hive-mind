@@ -161,12 +161,20 @@ CREATE INDEX IF NOT EXISTS idx_chunks_frame ON memory_frame_chunks (frame_id);
 //   memory_frames_vec        — whole-frame embeddings (legacy + fallback)
 //   memory_frame_chunks_vec  — chunk-level embeddings (primary search target)
 // Recall fuses both signals via RRF; chunks dominate when populated.
-export const VEC_TABLE_SQL = `
+/** Vec-table DDL parameterized by embedding dimension. vec0 columns can't be
+ *  ALTERed, so changing dimension means DROP + CREATE (see MindDB.recreateVecTables). */
+export function vecTableSqlForDim(dim: number): string {
+  const d = Math.trunc(dim);
+  return `
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_frames_vec USING vec0(
-  embedding float[1024]
+  embedding float[${d}]
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_frame_chunks_vec USING vec0(
-  embedding float[1024]
+  embedding float[${d}]
 );
 `;
+}
+
+/** Default vec schema at the canonical 1024-dim (used on first init + migrations). */
+export const VEC_TABLE_SQL = vecTableSqlForDim(1024);
