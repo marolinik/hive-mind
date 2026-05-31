@@ -16,6 +16,7 @@ import type { MindDB } from './db.js';
 import type { Embedder } from './embeddings.js';
 import type { MemoryFrame, Importance } from './frames.js';
 import type { Reranker } from './inprocess-reranker.js';
+import { createCoreLogger } from '../logger.js';
 import {
   computeRelevance,
   SCORING_PROFILES,
@@ -52,6 +53,8 @@ export interface SearchResult {
 
 const RRF_K = 60;
 
+const log = createCoreLogger('search');
+
 function f32ToBlob(f32: Float32Array): Uint8Array {
   return new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength);
 }
@@ -60,9 +63,41 @@ export class HybridSearch {
   private db: MindDB;
   private embedder: Embedder;
 
+  /** Memoized once a successful fingerprint check has run. A failing check
+   *  (dim mismatch) leaves this false so it re-throws on every call. */
+  private fingerprintChecked = false;
+
   constructor(db: MindDB, embedder: Embedder) {
     this.db = db;
     this.embedder = embedder;
+  }
+
+  /**
+   * Guard the embedding dimension before any vector read/write. Records the
+   * {provider, model, dim} fingerprint on first use; throws
+   * EmbeddingDimMismatchError if the active embedder's dim differs from what
+   * the .mind's vectors were written at; warns (but allows) on a same-dim model
+   * change. Memoized on success so it costs one meta read per instance lifetime.
+   * Must be called BEFORE any try/catch that would swallow the error.
+   */
+  private ensureFingerprint(): void {
+    if (this.fingerprintChecked) return;
+    const e = this.embedder as Embedder & {
+      getActiveProvider?(): string;
+      getStatus?(): { modelName?: string };
+    };
+    const provider = e.getActiveProvider?.() ?? 'unknown';
+    const model = e.getStatus?.().modelName ?? 'unknown';
+    const result = this.db.ensureEmbeddingFingerprint({ provider, model, dim: this.embedder.dimensions });
+    // Only memoize after a non-throwing check (a dim mismatch must keep throwing).
+    this.fingerprintChecked = true;
+    if (result.status === 'model-changed') {
+      log.warn(
+        `Embedding model changed for this .mind (${result.storedProvider}/${result.storedModel} → ` +
+          `${provider}/${model}, same ${this.embedder.dimensions}-dim). Existing vectors stay searchable, ` +
+          `but cross-model similarity is degraded — consider \`hive-mind maintenance --reembed-all\`.`,
+      );
+    }
   }
 
   async search(query: string, options: SearchOptions = {}): Promise<SearchResult[]> {
@@ -231,6 +266,7 @@ export class HybridSearch {
   }
 
   async vectorSearch(query: string, limit: number, gopId?: string): Promise<number[]> {
+    this.ensureFingerprint();
     const embedding = await this.embedder.embed(query);
     const blob = f32ToBlob(embedding);
     const raw = this.db.getDatabase();
@@ -274,6 +310,7 @@ export class HybridSearch {
   }
 
   async indexFrame(frameId: number, content: string): Promise<void> {
+    this.ensureFingerprint();
     if (!Number.isFinite(frameId)) {
       throw new Error('Invalid frame ID for vector indexing');
     }
@@ -288,6 +325,7 @@ export class HybridSearch {
 
   async indexFramesBatch(frames: { id: number; content: string }[]): Promise<void> {
     if (frames.length === 0) return;
+    this.ensureFingerprint();
     for (const f of frames) {
       if (!Number.isFinite(f.id)) {
         throw new Error('Invalid frame ID for vector indexing');
@@ -329,6 +367,7 @@ export class HybridSearch {
     if (!Number.isFinite(frameId) || frameId <= 0) {
       throw new Error('Invalid frame ID for chunk indexing');
     }
+    this.ensureFingerprint();
     const raw = this.db.getDatabase();
     const id = Math.trunc(frameId);
 
@@ -380,6 +419,7 @@ export class HybridSearch {
    * cleanly fall back to the whole-frame vectorSearch path.
    */
   async vectorSearchChunks(query: string, limit: number, gopId?: string): Promise<number[] | null> {
+    this.ensureFingerprint();
     const raw = this.db.getDatabase();
     // Cheap probe — avoid embedding the query when chunks aren't populated.
     let chunkCount: number;

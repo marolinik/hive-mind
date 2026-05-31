@@ -2,10 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync, existsSync } from 'node:fs';
-import { MindDB } from './db.js';
+import { MindDB, EmbeddingDimMismatchError } from './db.js';
 import { FrameStore } from './frames.js';
 import { HybridSearch } from './search.js';
 import { createEmbeddingProvider, type EmbeddingProviderInstance } from './embedding-provider.js';
+import type { Embedder } from './embeddings.js';
 
 describe('HybridSearch', () => {
   let dbPath: string;
@@ -79,6 +80,40 @@ describe('HybridSearch', () => {
 
     const ids = await search.vectorSearch('quantum annealing implementation notes', 10);
     expect(ids).toContain(frame.id);
+  });
+
+  it('records the embedding fingerprint (provider + dim) on first vector write', async () => {
+    const f = frames.createIFrame('gop-a', 'fingerprint this frame');
+    await search.indexFrame(f.id, f.content);
+    const raw = db.getDatabase();
+    const dim = raw.prepare("SELECT value FROM meta WHERE key = 'embedding_dim'").get() as
+      | { value: string }
+      | undefined;
+    const provider = raw.prepare("SELECT value FROM meta WHERE key = 'embedding_provider'").get() as
+      | { value: string }
+      | undefined;
+    expect(dim?.value).toBe('1024'); // mock default
+    expect(provider?.value).toBe('mock');
+  });
+
+  it('refuses index AND search when the embedder dim no longer matches the stored fingerprint', async () => {
+    const f = frames.createIFrame('gop-a', 'seed written under the 1024-dim mock');
+    await search.indexFrame(f.id, f.content); // records dim 1024
+
+    // A different HybridSearch over the SAME db, but with a 768-dim embedder.
+    const small: Embedder = {
+      dimensions: 768,
+      async embed() {
+        return new Float32Array(768);
+      },
+      async embedBatch(texts) {
+        return texts.map(() => new Float32Array(768));
+      },
+    };
+    const search2 = new HybridSearch(db, small);
+    const g = frames.createIFrame('gop-a', 'a frame we should never get to embed');
+    await expect(search2.indexFrame(g.id, g.content)).rejects.toThrow(EmbeddingDimMismatchError);
+    await expect(search2.vectorSearch('any query', 5)).rejects.toThrow(EmbeddingDimMismatchError);
   });
 
   it('indexFramesBatch inserts multiple rows atomically', async () => {
