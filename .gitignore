@@ -20,3 +20,7 @@ test-fixtures/**/projects.json
 test-fixtures/**/memories.json
 test-fixtures/**/users.json
 test-fixtures/**/design_chats/
+
+# Local-only planning artifacts. The consolidation plan references proprietary
+# Waggle OS internals and absolute D:/ paths — it must never reach the public repo.
+.planning/
