@@ -6,7 +6,8 @@
  * deleting that legacy .cjs, so it must be rigorous.
  *
  * Why this lives in packages/cli/src (not next to run.mjs): vitest.config.ts
- * collects only `packages/*​/src/**​/*.{test,spec}.{ts,js}`. A spec placed under
+ * collects only per-package test and spec files (the vitest glob rooted at each
+ * package src dir). A spec placed under
  * benchmarks/ is never run. The recall-stress harness drives the built CLI, so
  * the CLI package is its natural home. It reaches the benchmark files via a
  * path relative to import.meta.url.
