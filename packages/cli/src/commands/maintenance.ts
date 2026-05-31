@@ -11,6 +11,7 @@ import {
   HybridSearch,
   MindDB,
   FrameStore,
+  KnowledgeGraph,
   maxEmbedCharsForModel,
   capEmbedText,
   type EmbeddingProviderInstance,
@@ -37,6 +38,12 @@ export interface MaintenanceOptions {
    * Costs one embed call per chunk (~3 chunks/frame avg → ~3x reembed cost).
    */
   rechunkAll?: boolean;
+  /**
+   * Merge duplicate KG entities that share a normalized name + type: re-point
+   * the duplicates' relations onto the survivor, sum seen_count, retire the
+   * dups. Idempotent. Replaces the .harvest purge-noise-entities dedup pass.
+   */
+  dedupeEntities?: boolean;
   cognify?: boolean;
   wiki?: boolean;
   maxTempAgeDays?: number;
@@ -80,6 +87,10 @@ export interface MaintenanceResult {
     activeProvider: string;
     modelName: string;
     durationMs: number;
+  };
+  dedupeEntities?: {
+    groups: number;
+    merged: number;
   };
   cognify?: {
     framesScanned: number;
@@ -337,6 +348,10 @@ async function runMaintenanceOnMind(
 
   if (options.rechunkAll) {
     result.rechunkAll = await runRechunkAllOnMind(db, embedder);
+  }
+
+  if (options.dedupeEntities) {
+    result.dedupeEntities = new KnowledgeGraph(db).dedupeByName();
   }
 }
 

@@ -171,4 +171,29 @@ describe('KnowledgeGraph', () => {
     const ok = kg.createRelation(alice.id, acme.id, 'works_at');
     expect(ok.relation_type).toBe('works_at');
   });
+
+  it('dedupeByName merges same-name/type entities, re-points relations, sums seen_count', () => {
+    // 'React' and 'react.js' both normalize to the same canonical name + type.
+    kg.createEntity('technology', 'React', { seen_count: 2 });
+    const b = kg.createEntity('technology', 'react.js', { seen_count: 3 });
+    const other = kg.createEntity('person', 'Ada', {});
+    // A relation on the more-connected entity (b) — the survivor it should win.
+    kg.createRelation(other.id, b.id, 'uses');
+
+    const result = kg.dedupeByName();
+    expect(result.groups).toBe(1);
+    expect(result.merged).toBe(1);
+
+    // Exactly one active technology entity survives.
+    const techs = kg.getEntities(1000).filter((e) => e.entity_type === 'technology');
+    expect(techs).toHaveLength(1);
+    const survivor = techs[0];
+    // seen_count summed across the merged group (2 + 3).
+    expect(JSON.parse(survivor.properties).seen_count).toBe(5);
+    // The relation now resolves to the survivor (still active).
+    const relsToSurvivor = kg.getRelationsTo(survivor.id);
+    expect(
+      relsToSurvivor.some((r) => r.source_id === other.id && r.relation_type === 'uses'),
+    ).toBe(true);
+  });
 });

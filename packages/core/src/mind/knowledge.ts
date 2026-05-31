@@ -19,6 +19,16 @@
  */
 
 import type { MindDB } from './db.js';
+import { normalizeEntityName } from './entity-normalizer.js';
+
+function safeParseProps(json: string): Record<string, unknown> {
+  try {
+    const v = JSON.parse(json || '{}');
+    return v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
 
 export interface Entity {
   id: number;
@@ -284,6 +294,79 @@ export class KnowledgeGraph {
       .getDatabase()
       .prepare("UPDATE knowledge_relations SET valid_to = datetime('now') WHERE id = ?")
       .run(id);
+  }
+
+  /**
+   * Merge active entities that share a normalized name + type. The survivor is
+   * the entity with the most relations (ties broken by lowest/oldest id); each
+   * duplicate's relations are re-pointed to the survivor, properties are merged
+   * (survivor wins on key conflicts, but `seen_count` is summed), and the
+   * duplicate is retired (bitemporal soft-delete). Runs in a single transaction.
+   *
+   * Shared by `cleanup_entities` (MCP, mode='dedup') and the CLI
+   * `maintenance --dedupe-entities` flag so the merge logic has one definition.
+   *
+   * @returns `{ groups }` duplicate groups processed, `{ merged }` entities retired.
+   */
+  dedupeByName(): { groups: number; merged: number } {
+    const raw = this.db.getDatabase();
+    const grouped = new Map<string, Entity[]>();
+    for (const e of this.getEntities(100_000)) {
+      const key = `${normalizeEntityName(e.name)}::${e.entity_type.toLowerCase()}`;
+      let g = grouped.get(key);
+      if (!g) {
+        g = [];
+        grouped.set(key, g);
+      }
+      g.push(e);
+    }
+
+    let groups = 0;
+    let merged = 0;
+    const relCount = (id: number): number =>
+      this.getRelationsFrom(id).length + this.getRelationsTo(id).length;
+
+    const tx = raw.transaction(() => {
+      for (const group of grouped.values()) {
+        if (group.length <= 1) continue;
+        groups += 1;
+        // Survivor = most relations; ties → lowest (oldest) id.
+        const sorted = [...group].sort((a, b) => relCount(b.id) - relCount(a.id) || a.id - b.id);
+        const keep = sorted[0];
+
+        for (const dup of sorted.slice(1)) {
+          // Re-point the duplicate's relations onto the survivor, then retire them.
+          for (const rel of this.getRelationsFrom(dup.id)) {
+            try {
+              this.createRelation(keep.id, rel.target_id, rel.relation_type, rel.confidence, safeParseProps(rel.properties));
+            } catch {
+              /* may already exist or be schema-rejected — the retire below still applies */
+            }
+            this.retireRelation(rel.id);
+          }
+          for (const rel of this.getRelationsTo(dup.id)) {
+            try {
+              this.createRelation(rel.source_id, keep.id, rel.relation_type, rel.confidence, safeParseProps(rel.properties));
+            } catch {
+              /* idem */
+            }
+            this.retireRelation(rel.id);
+          }
+
+          // Merge properties: survivor wins on conflicts, seen_count is summed.
+          const keepProps = safeParseProps(keep.properties);
+          const dupProps = safeParseProps(dup.properties);
+          const mergedProps: Record<string, unknown> = { ...dupProps, ...keepProps };
+          mergedProps.seen_count =
+            Number(keepProps.seen_count ?? 1) + Number(dupProps.seen_count ?? 1);
+          this.updateEntity(keep.id, { properties: mergedProps });
+          this.retireEntity(dup.id);
+          merged += 1;
+        }
+      }
+    });
+    tx();
+    return { groups, merged };
   }
 
   // ── Graph traversal ──────────────────────────────────────────────────

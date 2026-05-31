@@ -297,67 +297,16 @@ export function registerCleanupTools(server: McpServer): void {
       }
 
       if (mode === 'dedup') {
-        const allEntities = kg.getEntities(10000);
-        const normalizedGroups = new Map<string, typeof allEntities>();
-        for (const entity of allEntities) {
-          const key = `${normalizeEntityName(entity.name)}::${entity.entity_type.toLowerCase()}`;
-          let group = normalizedGroups.get(key);
-          if (!group) {
-            group = [];
-            normalizedGroups.set(key, group);
-          }
-          group.push(entity);
-        }
-
-        let merged = 0;
-        const dedupTx = raw.transaction(() => {
-          for (const group of normalizedGroups.values()) {
-            if (group.length <= 1) continue;
-
-            // Keep the entity with the most relations (or the oldest)
-            const sorted = group.sort((a, b) => {
-              const aRels = kg.getRelationsFrom(a.id).length + kg.getRelationsTo(a.id).length;
-              const bRels = kg.getRelationsFrom(b.id).length + kg.getRelationsTo(b.id).length;
-              return bRels - aRels;
-            });
-            const keep = sorted[0];
-            const retire = sorted.slice(1);
-
-            for (const dup of retire) {
-              // Re-point relations from dup to keep
-              for (const rel of kg.getRelationsFrom(dup.id)) {
-                try {
-                  kg.createRelation(keep.id, rel.target_id, rel.relation_type, rel.confidence);
-                } catch { /* may already exist */ }
-                kg.retireRelation(rel.id);
-              }
-              for (const rel of kg.getRelationsTo(dup.id)) {
-                try {
-                  kg.createRelation(rel.source_id, keep.id, rel.relation_type, rel.confidence);
-                } catch { /* may already exist */ }
-                kg.retireRelation(rel.id);
-              }
-
-              // Merge properties
-              try {
-                const keepProps = JSON.parse(keep.properties || '{}');
-                const dupProps = JSON.parse(dup.properties || '{}');
-                const mergedProps = { ...dupProps, ...keepProps };
-                kg.updateEntity(keep.id, { properties: mergedProps });
-              } catch { /* ok */ }
-
-              kg.retireEntity(dup.id);
-              merged++;
-            }
-          }
-        });
-        dedupTx();
+        // Shared merge logic lives in KnowledgeGraph.dedupeByName (one definition,
+        // also used by the CLI `maintenance --dedupe-entities` flag).
+        const { groups, merged } = kg.dedupeByName();
 
         return {
           content: [{
             type: 'text' as const,
             text: JSON.stringify({
               action: 'dedup',
+              duplicate_groups: groups,
               entities_merged: merged,
             }, null, 2),
           }],

@@ -149,6 +149,7 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
         reconcile: Boolean(values['reconcile']),
         reembedAll: Boolean(values['reembed-all']),
         rechunkAll: Boolean(values['rechunk-all']),
+        dedupeEntities: Boolean(values['dedupe-entities']),
         cognify: Boolean(values['cognify']),
         wiki: Boolean(values['wiki']),
         maxTempAgeDays: intArg(values, 'max-temp-age-days'),
@@ -164,6 +165,7 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
       if (result.reconcile) lines.push(`  reconcile:    fts=${result.reconcile.ftsFixed} vec=${result.reconcile.vecFixed}`);
       if (result.reembedAll) lines.push(`  reembed-all:  ${result.reembedAll.framesEmbedded} frames via ${result.reembedAll.activeProvider}/${result.reembedAll.modelName} in ${(result.reembedAll.durationMs / 1000).toFixed(1)}s`);
       if (result.rechunkAll) lines.push(`  rechunk-all:  ${result.rechunkAll.framesProcessed} frames → ${result.rechunkAll.chunksCreated} chunks via ${result.rechunkAll.activeProvider}/${result.rechunkAll.modelName} in ${(result.rechunkAll.durationMs / 1000).toFixed(1)}s`);
+      if (result.dedupeEntities) lines.push(`  dedupe-entities: merged ${result.dedupeEntities.merged} dup(s) across ${result.dedupeEntities.groups} group(s)`);
       if (result.cognify) lines.push(`  cognify:      ${result.cognify.framesScanned} frames, ${result.cognify.entitiesCreated} new, ${result.cognify.entitiesUpdated} updated`);
       if (result.wiki) lines.push(`  wiki:         ${result.wiki.pagesCreated} created, ${result.wiki.pagesUpdated} updated, provider=${result.wiki.provider}`);
       return lines.join('\n');
