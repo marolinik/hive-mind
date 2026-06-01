@@ -18,6 +18,9 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "npm run build && changeset publish",
     "e2e:seed": "node e2e/seed.mjs",
     "e2e:serve": "node e2e/serve.mjs",
     "e2e:http": "node e2e/http-verify.mjs",
@@ -42,6 +45,7 @@
     "semantic-search"
   ],
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",

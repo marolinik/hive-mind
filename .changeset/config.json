@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [
+    [
+      "@hive-mind/core",
+      "@hive-mind/enrichment",
+      "@hive-mind/wiki-compiler",
+      "@hive-mind/mcp-server",
+      "@hive-mind/cli",
+      "@hive-mind/claude-code-hooks",
+      "@hive-mind/wiki-web"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "master",
+  "updateInternalDependencies": "patch",
+  "ignore": []
+}
