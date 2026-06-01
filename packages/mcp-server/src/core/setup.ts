@@ -18,6 +18,7 @@ import {
   WorkspaceManager,
   MultiMindCache,
   createEmbeddingProvider,
+  createInProcessReranker,
   HarvestSourceStore,
   ChatGPTAdapter,
   ClaudeAdapter,
@@ -30,6 +31,7 @@ import {
   PdfAdapter,
   type EmbeddingProviderInstance,
   type EmbeddingProviderConfig,
+  type Reranker,
 } from '@hive-mind/core';
 
 // ── Data directory ──────────────────────────────────────────────────
@@ -61,6 +63,7 @@ let _workspaceManager: WorkspaceManager;
 let _mindCache: MultiMindCache;
 let _embedder: EmbeddingProviderInstance;
 let _harvestSourceStore: HarvestSourceStore;
+let _reranker: Reranker | undefined | null = null; // null = unattempted; undefined = attempted-and-failed
 
 // ── Harvest adapters (stateless, instantiate once) ──────────────────
 
@@ -184,6 +187,36 @@ export function getMindCache(): MultiMindCache { return _mindCache; }
 export function getEmbedder(): EmbeddingProviderInstance { return _embedder; }
 export function getHarvestSourceStore(): HarvestSourceStore { return _harvestSourceStore; }
 
+/**
+ * Lazy-load the cross-encoder reranker, memoized across calls.
+ *
+ * Mirrors the CLI's env.getReranker() (packages/cli/src/setup.ts) so the MCP
+ * recall path reranks identically to `hive-mind recall-context` — otherwise
+ * MCP clients silently get a worse-ordered result set than CLI users.
+ *
+ * Opt-out via HIVE_MIND_NO_RERANK=1 (CI / headless / low-resource): skips the
+ * ~87MB ONNX load. Reranking only re-orders the RRF survivors, so search still
+ * works without it; a load failure soft-fails to undefined.
+ */
+export async function getReranker(): Promise<Reranker | undefined> {
+  if (_reranker !== null) return _reranker ?? undefined;
+  if (process.env.HIVE_MIND_NO_RERANK === '1' || process.env.HIVE_MIND_NO_RERANK === 'true') {
+    _reranker = undefined;
+    return undefined;
+  }
+  try {
+    _reranker = await createInProcessReranker({
+      cacheDir: path.join(_dataDir, 'models'),
+    });
+    return _reranker;
+  } catch {
+    // peer dep missing, model load failed, or first-download network blip —
+    // soft fail; RRF ordering still applies.
+    _reranker = undefined;
+    return undefined;
+  }
+}
+
 // ── Workspace mind layer cache ──────────────────────────────────────
 // Avoids re-creating FrameStore/HybridSearch/KnowledgeGraph/SessionStore
 // on every getWorkspaceMind() call. Invalidates when MindDB reference
@@ -229,5 +262,6 @@ export function shutdown(): void {
   _workspaceMindLayerCache.clear();
   _mindCache.closeAll();
   try { _personalDb?.close(); } catch { /* already closed */ }
+  _reranker = null;
   _initialized = false;
 }

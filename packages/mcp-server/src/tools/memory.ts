@@ -7,6 +7,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   getFrameStore,
+  getReranker,
   getSearch,
   getSessions,
   getWorkspaceMind,
@@ -117,9 +118,16 @@ export function registerMemoryTools(server: McpServer): void {
       }
       const results: ResultItem[] = [];
 
+      // Lazy-load the cross-encoder reranker (memoized; HIVE_MIND_NO_RERANK opts
+      // out; soft-fails to undefined). Threading it here gives MCP recall the
+      // same reranked ordering the CLI's recall-context already gets — without
+      // it, HybridSearch returns RRF-only order and MCP clients silently get a
+      // worse result set than CLI users.
+      const reranker = await getReranker();
       const searchOpts = {
         limit: maxResults,
         profile: scoringProfile as 'balanced' | 'recent' | 'important' | 'connected',
+        reranker,
       };
 
       // Search personal mind
