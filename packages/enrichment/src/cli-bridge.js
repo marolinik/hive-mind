@@ -166,5 +166,3 @@ export function callMcp(toolName, args = {}, opts = {}) {
     });
   });
 }
-
-export { getCliPath };
