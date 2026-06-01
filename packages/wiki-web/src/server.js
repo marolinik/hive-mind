@@ -94,11 +94,14 @@ app.get('/search', async (req, res) => {
 
 app.get('/entity/:id', async (req, res) => {
   const id = req.params.id;
-  // Use search_entities to fetch by id (no direct get_entity in MCP per current CLI).
-  const r = await callMcp('search_entities', { query: id, limit: 5 }, { timeoutMs: 4000 });
+  // No get-entity-by-id tool exists in the MCP surface yet, so enumerate (empty
+  // query lists entities, capped at 200) and match by id. The previous code
+  // searched for the numeric id as a *name* query, which never matched — so
+  // every /entity/:id, and thus every graph-node drill-down, returned 404.
+  const r = await callMcp('search_entities', { query: '', limit: 200 }, { timeoutMs: 4000 });
   let entity = null;
   if (r.ok && Array.isArray(r.data)) {
-    entity = r.data.find((e) => String(e.id) === String(id)) || r.data[0] || null;
+    entity = r.data.find((e) => String(e.id) === String(id)) || null;
   }
   if (!entity) {
     res.type('html').status(404).send(renderEntity({ id, entity: null, error: 'entity not found' }));
