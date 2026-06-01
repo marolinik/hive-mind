@@ -56,9 +56,15 @@ run is captured in [`VERIFICATION-REPORT.md`](./VERIFICATION-REPORT.md).
 |------|------|
 | `seed.mjs` | Deterministic fixture builder (via the real CLI bridge). Exits non-zero on any seed failure. |
 | `serve.mjs` | Boots wiki-web against a fixture (`PORT`, `[dataDir]`). |
-| `http-verify.mjs` | Layer 1 — browserless route assertions. |
-| `playwright.config.ts` + `visual.spec.ts` | Layer 2 — visual tier (seeds + serves via `webServer`). |
-| `VERIFICATION-REPORT.md` | Latest agent-vision verification report. |
+| `http-verify.mjs` | wiki-web — browserless route + JSON assertions (`e2e:http`). |
+| `mcp-tools-verify.mjs` | All 21 MCP tools end-to-end via the CLI bridge (`e2e:mcp-tools`). |
+| `hooks-verify.mjs` | Live smoke of the 5 Claude Code lifecycle hooks (`e2e:hooks`). |
+| `mcp-server-verify.mjs` | stdio JSON-RPC handshake + `npm pack` clean-install check (`e2e:mcp-server`). |
+| `_noop-drain.mjs` | No-op `HIVE_MIND_DRAIN_SCRIPT` so the hooks smoke can't touch real `~/.hive-mind`. |
+| `playwright.config.ts` + `visual.spec.ts` | Optional visual tier (seeds + serves via `webServer`). |
+| `VERIFICATION-REPORT.md` | Latest full-platform verification report. |
+
+Run everything: **`npm run e2e:all`** (http + mcp-tools + hooks + mcp-server).
 
 Fixtures, screenshots, and logs are written under `.e2e-tmp/` (gitignored).
 

@@ -21,6 +21,10 @@
     "e2e:seed": "node e2e/seed.mjs",
     "e2e:serve": "node e2e/serve.mjs",
     "e2e:http": "node e2e/http-verify.mjs",
+    "e2e:mcp-tools": "node e2e/mcp-tools-verify.mjs",
+    "e2e:hooks": "node e2e/hooks-verify.mjs",
+    "e2e:mcp-server": "node e2e/mcp-server-verify.mjs",
+    "e2e:all": "node e2e/http-verify.mjs && node e2e/mcp-tools-verify.mjs && node e2e/hooks-verify.mjs && node e2e/mcp-server-verify.mjs",
     "e2e:visual": "playwright test -c e2e/playwright.config.ts",
     "clean": "tsc --build --clean && rm -rf packages/*/dist"
   },

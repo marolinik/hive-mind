@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-**OVERALL VERDICT: READY for the local-first plugin + MCP + wiki-web ship scope — 6/6 routes PASS, and the one wiki-web ship blocker (the `/graph` CDN dependency) is now fixed.** Broader-roadmap P1/P2 items remain (see §6) but do not block this scope.
+**OVERALL VERDICT: READY for the local-first plugin + MCP + wiki-web ship scope — now evidence-backed across the whole surface.** wiki-web 6/6 routes; **all 21 MCP tools** verified end-to-end through the real CLI bridge **and** a live stdio JSON-RPC handshake; **all 5 lifecycle hooks** load + run live; **all 6 publishable packages** pack cleanly; and the one wiki-web ship blocker (the `/graph` CDN dependency) is fixed. Broader-roadmap P1/P2 items remain (see §6) but do not block this scope. (Deep-verification detail in §8.)
 
 A full end-to-end visual verification of the `@hive-mind/wiki-web` component was run against a deterministic seed, driving a real Chrome browser through every primary route (home, search, entity, frame, graph, wiki) and capturing screenshots. Of the six routes, **4 passed on the first automated pass** (home, search, frame, graph). The entity and wiki screenshots initially failed — but **not because of a product defect**: the live chrome-devtools capture hit a navigate→screenshot **paint race** that saved wrong-page images (the graph view for `/entity/1`, the home page for `/wiki/hive-mind`). Re-capturing with an a11y-snapshot paint barrier — and cross-checking against the browserless `e2e:http` harness (9/9) and a11y snapshots — confirms **both routes render correct seeded data → 6/6**. (Both routes also exercise the two bugs fixed this session: the entity-detail 404, BUG #2 / `38936e4`, and the native-ESM crash that broke every node consumer including the wiki server, BUG #1 / `ace91db`.) With both fixes committed on top of `e2db71a`, the full vitest suite is **GREEN at 548/548** and `typecheck`, `lint`, and `build` all pass. For the current ship scope (local-first plugin + MCP server + wiki-web), the two CRITICAL/HIGH regressions are resolved and regression-guarded. Both caveats from the initial pass are now resolved: (a) `/graph` no longer touches any CDN — `vis-network` is vendored into `packages/wiki-web/public/vendor/` and served locally, and a `Content-Security-Policy` (`script-src 'self'`) now **blocks** any external script as defense-in-depth (FINDING #3, **FIXED** — verified live, zero external requests), and (b) all fix + harness + CDN-fix commits are pushed to `origin`. The only outstanding outward item is fast-forwarding `origin/master` (still at `e2db71a`) to carry the BUG #1 fix to the public default branch.
 
@@ -103,14 +103,26 @@ PORT=3939 node e2e/serve.mjs
 
 Then open `http://localhost:3939/` and walk the routes: `/`, `/search?q=ZephyrFixture`, `/entity/1`, `/frame/1`, `/graph`, `/wiki/hive-mind`.
 
-Committed harness (one-shot, once wired into package scripts):
+Committed harness — run the whole suite:
 
 ```bash
-npm run e2e:http
+npm run e2e:all     # http-verify + mcp-tools + hooks + mcp-server
 ```
 
-This runs the committed `e2e/` harness (`seed.mjs` + `serve.mjs` + `http-verify.mjs`, with `playwright.config.ts` for the browser pass), seeding, serving, and verifying each route end-to-end through the UI → `callMcp` CLI bridge → `MindDB` → SQLite/FTS5 chain.
+Or individually: `e2e:http` (12 route/JSON checks), `e2e:mcp-tools` (all 21 tools), `e2e:hooks` (5 lifecycle hooks), `e2e:mcp-server` (stdio handshake + `npm pack`), plus `e2e:visual` (Playwright screenshots). Each seeds a fresh deterministic fixture and exercises the real UI/MCP → `callMcp` CLI bridge → `MindDB` → SQLite/FTS5 chain.
 
 ---
 
-*Grounded against `chore/phase-0-release-hardening` (fixes `ace91db`, `38936e4`, the e2e harness commit, + the wiki-web local-first hardening commit). CI gates GREEN: vitest 549/549, `tsc --build` typecheck exit 0, eslint exit 0, build via tsc; `npm run e2e:http` 12/12 (incl. local-first guards). Committed screenshots: `e2e/screenshots/{01-home,02-search,03-entity,04-frame,05-graph,06-wiki}.png`.*
+## 8. Deep verification — MCP tools, hooks, server, packaging
+
+Closing the gaps the wiki-web pass exercised only transitively. All four verifiers seed a fresh deterministic fixture and assert against real code paths.
+
+**All 21 MCP tools — `e2e:mcp-tools`, 22/22.** Every tool driven directly via `node <cli> mcp call <tool> --json` (the exact path MCP clients use), asserted non-error with a correct payload: memory (save/recall), knowledge (save_entity/search_entities/create_relation), wiki (compile/search/get_page/health), identity (get/set), awareness (set/get/clear), workspace (list/create), ingest_source, harvest (import/sources), cleanup (compact + audit — non-destructive only). `harvest_import` and `ingest_source` each created a real frame.
+
+**All 5 lifecycle hooks — `e2e:hooks`, 6/6.** Each hook run as Claude Code drives it (a JSON event on stdin, hook env set), proving it loads its full `@hive-mind/enrichment` graph — the exact thing the BUG #1 crash broke — and exits 0. `session-start`, `user-prompt-submit`, and `pre-compact` run their FULL bodies against the fixture (and `user-prompt-submit`'s saved prompt frame is recalled back, confirming the write landed); `stop` and `post-tool-use` run in load+guard mode (`HIVE_MIND_NO_SYNTH=1`) because their bodies append to the global `~/.hive-mind` queue / cognify marker — they still fully load the module graph. `session-start`'s opportunistic drain is neutralized via a no-op `HIVE_MIND_DRAIN_SCRIPT`, so the smoke never mutates real user data.
+
+**MCP server handshake + clean-install — `e2e:mcp-server`, 9/9.** The stdio server spawned exactly as a client launches it (`node packages/mcp-server/dist/index.js`); a real JSON-RPC `initialize` (protocol `2024-11-05`, server `hive-mind-memory`) → `tools/list` (**all 21 tools register**) → `tools/call compile_health` (executes live, score 90). Then `npm pack --dry-run` on all 6 publishable `@hive-mind/*` packages — every `files` allowlist resolves, so a fresh `npm i` receives the right contents.
+
+---
+
+*Grounded against `chore/phase-0-release-hardening` (fixes `ace91db`, `38936e4`, the e2e harness commit, the wiki-web local-first hardening commit, + the deep-verification commit). CI gates GREEN: vitest green, `tsc --build` typecheck exit 0, eslint exit 0, build via tsc. E2E GREEN: `e2e:http` 12/12, `e2e:mcp-tools` 22/22, `e2e:hooks` 6/6, `e2e:mcp-server` 9/9. Committed screenshots: `e2e/screenshots/{01-home,02-search,03-entity,04-frame,05-graph,06-wiki}.png`.*
