@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { rmSync, existsSync } from 'node:fs';
 import { MindDB, EmbeddingDimMismatchError } from './db.js';
 import { FrameStore } from './frames.js';
-import { HybridSearch } from './search.js';
+import { HybridSearch, assessRetrievalConfidence, type SearchResult } from './search.js';
 import { createEmbeddingProvider, type EmbeddingProviderInstance } from './embedding-provider.js';
 import type { Embedder } from './embeddings.js';
 
@@ -181,5 +181,36 @@ describe('HybridSearch', () => {
     const ids = results.map((r) => r.frame.id);
     expect(ids).toContain(inA.id);
     expect(ids).not.toContain(inB.id);
+  });
+});
+
+describe('assessRetrievalConfidence (abstain scaffold)', () => {
+  const mk = (finalScore: number): SearchResult =>
+    ({ frame: {} as never, rrfScore: 0, relevanceScore: 0, finalScore });
+
+  it('empty result set is always insufficient (topScore 0)', () => {
+    const v = assessRetrievalConfidence([], 0.3);
+    expect(v.sufficient).toBe(false);
+    expect(v.topScore).toBe(0);
+    expect(v.threshold).toBe(0.3);
+  });
+
+  it('sufficient when the top finalScore is strictly above the threshold', () => {
+    const v = assessRetrievalConfidence([mk(0.42), mk(0.1)], 0.3);
+    expect(v.sufficient).toBe(true);
+    expect(v.topScore).toBe(0.42);
+  });
+
+  it('insufficient when the top finalScore is below the threshold', () => {
+    expect(assessRetrievalConfidence([mk(0.05)], 0.3).sufficient).toBe(false);
+  });
+
+  it('threshold is strict (equal does NOT pass)', () => {
+    expect(assessRetrievalConfidence([mk(0.3)], 0.3).sufficient).toBe(false);
+  });
+
+  it('reads only the top result (results are pre-sorted by finalScore desc)', () => {
+    // Even if a later element is high, the verdict is driven by index 0.
+    expect(assessRetrievalConfidence([mk(0.01), mk(0.99)], 0.3).topScore).toBe(0.01);
   });
 });

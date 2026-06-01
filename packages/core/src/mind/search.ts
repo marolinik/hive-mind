@@ -51,6 +51,39 @@ export interface SearchResult {
   finalScore: number;
 }
 
+/**
+ * Retrieval-confidence verdict for the abstain path (LongMemEval's
+ * "insufficient evidence" ability). Pure + side-effect-free so callers
+ * (MCP recall_memory, CLI, eval harness) can decide whether to answer or
+ * abstain without re-running search.
+ */
+export interface RetrievalConfidence {
+  /** True when the top result clears the threshold (safe to answer). */
+  sufficient: boolean;
+  /** The top finalScore observed (0 when there were no results). */
+  topScore: number;
+  /** The threshold it was compared against. */
+  threshold: number;
+}
+
+/**
+ * Assess whether a result set carries enough signal to answer, or whether the
+ * caller should abstain ("insufficient evidence"). A scaffold for the abstain
+ * path: it does NOT change `search()` output — callers opt in by passing the
+ * results plus a τ threshold. `sufficient` is true iff the top finalScore is
+ * strictly greater than τ; an empty set is always insufficient.
+ *
+ * Threshold semantics intentionally mirror the recall-stress edge-query rule
+ * (a low top score means "nothing relevant surfaced").
+ */
+export function assessRetrievalConfidence(
+  results: readonly SearchResult[],
+  threshold: number,
+): RetrievalConfidence {
+  const topScore = results.length ? results[0].finalScore : 0;
+  return { sufficient: topScore > threshold, topScore, threshold };
+}
+
 const RRF_K = 60;
 
 const log = createCoreLogger('search');

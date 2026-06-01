@@ -129,8 +129,8 @@ export { ConceptTracker, CONCEPT_MASTERY_TABLE_SQL } from './mind/concept-tracke
 export type { ConceptEntry, ConceptUpdate } from './mind/concept-tracker.js';
 
 // Hybrid search + scoring
-export { HybridSearch } from './mind/search.js';
-export type { SearchOptions, SearchResult } from './mind/search.js';
+export { HybridSearch, assessRetrievalConfidence } from './mind/search.js';
+export type { SearchOptions, SearchResult, RetrievalConfidence } from './mind/search.js';
 export { chunkText } from './mind/chunker.js';
 export type { FrameChunk, ChunkOptions } from './mind/chunker.js';
 export { createInProcessReranker } from './mind/inprocess-reranker.js';
