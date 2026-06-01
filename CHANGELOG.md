@@ -147,7 +147,7 @@ Initial public release. Memory substrate, harvest pipeline, wiki compiler, and M
 - LLM provider abstraction (Anthropic SDK optional peer)
 
 **`@hive-mind/mcp-server`** — MCP server
-- 21 tools: `recall_memory`, `save_memory`, `search_entities`, `add_relation`, `get_entity`, `get_identity`, `set_identity`, `get_awareness`, `set_awareness`, `clear_awareness`, `list_workspaces`, `switch_workspace`, `harvest_conversations`, `harvest_status`, `ingest_source`, `compact_memory`, `cleanup_deprecated`, `compile_wiki`, `search_wiki`, `get_page`, `compile_health`
+- 21 tools: `recall_memory`, `save_memory`, `search_entities`, `save_entity`, `create_relation`, `get_identity`, `set_identity`, `get_awareness`, `set_awareness`, `clear_awareness`, `list_workspaces`, `create_workspace`, `harvest_sources`, `harvest_import`, `ingest_source`, `cleanup_frames`, `cleanup_entities`, `compile_wiki`, `search_wiki`, `get_page`, `compile_health`
 - 4 resources for workspace introspection
 - Stdio transport — compatible with Claude Code, Claude Desktop, Codex, Hermes, and any MCP-compatible client
 - Binary entry: `hive-mind-memory-mcp`

@@ -36,12 +36,13 @@ npx -y @hive-mind/mcp-server
 | Category | Tools |
 |---|---|
 | Memory | `recall_memory`, `save_memory` |
-| Knowledge graph | `search_entities`, `add_relation`, `get_entity` |
+| Knowledge graph | `search_entities`, `save_entity`, `create_relation` |
 | Identity | `get_identity`, `set_identity` |
 | Awareness | `get_awareness`, `set_awareness`, `clear_awareness` |
-| Workspace | `list_workspaces`, `switch_workspace` |
-| Harvest | `harvest_conversations`, `harvest_status`, `ingest_source` |
-| Cleanup | `compact_memory`, `cleanup_deprecated` |
+| Workspace | `list_workspaces`, `create_workspace` |
+| Harvest | `harvest_sources`, `harvest_import` |
+| Ingest | `ingest_source` |
+| Cleanup | `cleanup_frames`, `cleanup_entities` |
 | Wiki | `compile_wiki`, `search_wiki`, `get_page`, `compile_health` |
 
 ## License
