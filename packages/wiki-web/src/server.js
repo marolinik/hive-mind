@@ -54,6 +54,23 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const PORT = Number(process.env.PORT) || 3717;
 
 const app = express();
+
+// Local-first hardening: a Content-Security-Policy that only permits same-origin
+// + inline assets. This BLOCKS any external script/style/connect (e.g. a CDN),
+// enforcing the "zero cloud dependency" guarantee — if a CDN <script> is ever
+// reintroduced, the browser refuses it instead of silently phoning home.
+app.use((_req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'",
+  );
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
+
+// Quiet the cosmetic /favicon.ico 404 without shipping a binary asset.
+app.get('/favicon.ico', (_req, res) => res.status(204).end());
+
 app.use(express.static(PUBLIC_DIR));
 
 function asArrayMaybe(res) {

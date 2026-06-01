@@ -38,7 +38,7 @@ function walkJs(dir) {
   let entries;
   try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
   for (const e of entries) {
-    if (e.name === 'node_modules' || e.name === 'dist') continue;
+    if (e.name === 'node_modules' || e.name === 'dist' || e.name === 'vendor') continue;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) out.push(...walkJs(full));
     else if (/\.(js|mjs|cjs)$/.test(e.name) && !/\.(test|spec)\./.test(e.name)) out.push(full);

@@ -5,7 +5,7 @@ export function renderGraph() {
     <h2>Knowledge graph</h2>
     <p class="muted">Top entities and relations. Click a node to drill down.</p>
     <div id="graph" style="height: 70vh; border:1px solid #333; border-radius:8px;"></div>
-    <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+    <script src="/vendor/vis-network.min.js"></script>
     <script>
       (async () => {
         const res = await fetch('/api/graph');

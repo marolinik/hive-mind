@@ -112,6 +112,36 @@ const checks = [
     },
   },
   {
+    name: 'graph is local-first (vendored vis-network, no CDN)',
+    url: '/graph',
+    async run() {
+      const r = await fetch(BASE + '/graph');
+      const t = await r.text();
+      const ok = t.includes('/vendor/vis-network.min.js') && !t.includes('unpkg.com');
+      return { ok, detail: ok ? 'local asset, no unpkg' : 'CDN reference present!' };
+    },
+  },
+  {
+    name: 'vendored vis-network is served locally',
+    url: '/vendor/vis-network.min.js',
+    async run() {
+      const r = await fetch(BASE + '/vendor/vis-network.min.js');
+      const t = await r.text();
+      const ok = r.status === 200 && t.includes('vis-network') && t.length > 100_000;
+      return { ok, detail: `status=${r.status} bytes=${t.length}` };
+    },
+  },
+  {
+    name: 'CSP header blocks external scripts',
+    url: '/',
+    async run() {
+      const r = await fetch(BASE + '/');
+      const csp = r.headers.get('content-security-policy') || '';
+      const ok = /script-src[^;]*'self'/.test(csp) && !/script-src[^;]*unpkg/.test(csp);
+      return { ok, detail: csp ? 'script-src self' : 'no CSP header' };
+    },
+  },
+  {
     name: 'wiki/hive-mind shows article + sources',
     url: '/wiki/hive-mind',
     async run() {

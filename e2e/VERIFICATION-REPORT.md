@@ -2,9 +2,9 @@
 
 ## 1. Executive Summary
 
-**OVERALL VERDICT: READY_WITH_CAVEATS — 6/6 routes PASS (4 on the first automated pass; entity + wiki confirmed PASS after re-capture).**
+**OVERALL VERDICT: READY for the local-first plugin + MCP + wiki-web ship scope — 6/6 routes PASS, and the one wiki-web ship blocker (the `/graph` CDN dependency) is now fixed.** Broader-roadmap P1/P2 items remain (see §6) but do not block this scope.
 
-A full end-to-end visual verification of the `@hive-mind/wiki-web` component was run against a deterministic seed, driving a real Chrome browser through every primary route (home, search, entity, frame, graph, wiki) and capturing screenshots. Of the six routes, **4 passed on the first automated pass** (home, search, frame, graph). The entity and wiki screenshots initially failed — but **not because of a product defect**: the live chrome-devtools capture hit a navigate→screenshot **paint race** that saved wrong-page images (the graph view for `/entity/1`, the home page for `/wiki/hive-mind`). Re-capturing with an a11y-snapshot paint barrier — and cross-checking against the browserless `e2e:http` harness (9/9) and a11y snapshots — confirms **both routes render correct seeded data → 6/6**. (Both routes also exercise the two bugs fixed this session: the entity-detail 404, BUG #2 / `38936e4`, and the native-ESM crash that broke every node consumer including the wiki server, BUG #1 / `ace91db`.) With both fixes committed on top of `e2db71a`, the full vitest suite is **GREEN at 548/548** and `typecheck`, `lint`, and `build` all pass. For the current ship scope (local-first plugin + MCP server + wiki-web), the two CRITICAL/HIGH regressions are resolved and regression-guarded. It is **READY_WITH_CAVEATS** rather than fully READY because (a) the `/graph` view still fetches `vis-network` from the `unpkg.com` CDN at runtime — a direct contradiction of the advertised "zero cloud dependency" promise (FINDING #3, OPEN), and (b) the working tree is not clean for a release tag and the two fix commits are not yet pushed.
+A full end-to-end visual verification of the `@hive-mind/wiki-web` component was run against a deterministic seed, driving a real Chrome browser through every primary route (home, search, entity, frame, graph, wiki) and capturing screenshots. Of the six routes, **4 passed on the first automated pass** (home, search, frame, graph). The entity and wiki screenshots initially failed — but **not because of a product defect**: the live chrome-devtools capture hit a navigate→screenshot **paint race** that saved wrong-page images (the graph view for `/entity/1`, the home page for `/wiki/hive-mind`). Re-capturing with an a11y-snapshot paint barrier — and cross-checking against the browserless `e2e:http` harness (9/9) and a11y snapshots — confirms **both routes render correct seeded data → 6/6**. (Both routes also exercise the two bugs fixed this session: the entity-detail 404, BUG #2 / `38936e4`, and the native-ESM crash that broke every node consumer including the wiki server, BUG #1 / `ace91db`.) With both fixes committed on top of `e2db71a`, the full vitest suite is **GREEN at 548/548** and `typecheck`, `lint`, and `build` all pass. For the current ship scope (local-first plugin + MCP server + wiki-web), the two CRITICAL/HIGH regressions are resolved and regression-guarded. Both caveats from the initial pass are now resolved: (a) `/graph` no longer touches any CDN — `vis-network` is vendored into `packages/wiki-web/public/vendor/` and served locally, and a `Content-Security-Policy` (`script-src 'self'`) now **blocks** any external script as defense-in-depth (FINDING #3, **FIXED** — verified live, zero external requests), and (b) all fix + harness + CDN-fix commits are pushed to `origin`. The only outstanding outward item is fast-forwarding `origin/master` (still at `e2db71a`) to carry the BUG #1 fix to the public default branch.
 
 ---
 
@@ -31,7 +31,7 @@ The harness exercises the **full production chain**, not a mock: the wiki-web UI
 | search | `/search?q=ZephyrFixture` | **PASS** | "Search" page, query pre-filled `ZephyrFixture`. "Frames (6)" with exactly 6 `ZephyrFixture:`-prefixed results, each with id, timestamp, and importance badge (critical/important/normal). "Entities (0)" and "Wiki pages (0)" both show "No matches." | None |
 | entity | `/entity/1` | **PASS**\* | Entity detail for "Hive Mind", `type: project · id: 1`. Outgoing: `implements → entity 4`, `uses → entity 3`. Incoming: `works_on → entity 2`. | \*First automated capture saved the wrong page (paint race — see adjudication); re-captured cleanly → PASS. Exercises BUG #2 (`38936e4`). |
 | frame | `/frame/1` | **PASS** | "Frame 1" heading, metadata line `2026-06-01 15:34:33 · important · user_stated`, monospace content block: "ZephyrFixture: Hive Mind is a local-first AI memory system built on SQLite with hybrid search." | None |
-| graph | `/graph` | **PASS** | Fully rendered vis-network graph: 5 labeled nodes (SQLite, Hive Mind, Hybrid Search, Marko Markovic, Egzakta) and 4 directed labeled edges (`uses`, `implements`, `works_on`, `founder_of`) with arrowheads. Populated, not blank. | FINDING #3 (vis-network loaded from `unpkg.com` CDN — local-first violation); minor cosmetic label overlap. |
+| graph | `/graph` | **PASS** | Fully rendered vis-network graph: 5 labeled nodes (SQLite, Hive Mind, Hybrid Search, Marko Markovic, Egzakta) and 4 directed labeled edges (`uses`, `implements`, `works_on`, `founder_of`) with arrowheads. Populated, not blank. Re-verified after the CDN fix — renders identically from the local vendored asset. | FINDING #3 **FIXED** this session (vis-network vendored + served locally; CSP blocks external scripts). Minor cosmetic label overlap remains. |
 | wiki | `/wiki/hive-mind` | **PASS**\* | Article "Hive Mind", meta "compiled … · 6 source frames", a "Source frames — synthesis pending" section listing all 6 `ZephyrFixture` frames with recall scores, plus a back-to-home link. | \*First automated capture saved the home page (same paint race); re-captured cleanly → PASS. |
 
 ### Re-capture adjudication (entity + wiki)
@@ -59,14 +59,12 @@ After re-capturing with the barrier, **both routes render correct seeded data** 
 
 ## 5. Open findings
 
-### FINDING #3 — MEDIUM — `/graph` loads `vis-network` from an external CDN (local-first violation) — **OPEN**
-- **Location:** `packages/wiki-web/src/views/graph.js:8` loads `vis-network@9.1.9` `min.js` from `https://unpkg.com` at runtime. This is the **only** external runtime fetch in wiki-web (the rest of `src` was scanned — no other CDN/http leaks).
-- **Impact:** hive-mind's headline promise is "local-first, zero cloud dependency." The knowledge-graph view is **fully broken offline** and **silently issues a request to `unpkg.com` on every visit** (privacy/CSP concern). This directly contradicts the core product claim and **should be fixed before shipping wiki-web in a release**.
-- **Fix:** vendor `vis-network` into `packages/wiki-web` and serve it from the existing `express.static` mount; reference it locally. Adding a Content-Security-Policy (see FINDING #4) would also block accidental external script loads.
+### FINDING #3 — MEDIUM — `/graph` loaded `vis-network` from an external CDN (local-first violation) — **FIXED**
+- **Was:** `packages/wiki-web/src/views/graph.js:8` loaded `vis-network@9.1.9` from `https://unpkg.com` at runtime — the only external runtime fetch in wiki-web. It broke offline use and silently hit `unpkg.com` on every graph visit, contradicting the "zero cloud dependency" promise.
+- **Fix (this session):** vendored `vis-network` into `packages/wiki-web/public/vendor/vis-network.min.js` (served by the existing `express.static` mount, and included in the package's `files` allowlist) and pointed `graph.js` at `/vendor/vis-network.min.js`. A live Chrome check confirms `/graph` now loads the local asset with **zero external requests** and no console errors; `e2e:http` asserts the local reference and the absence of any `unpkg` reference (12/12).
 
-### FINDING #4 — LOW — `/favicon.ico` 404 + no security headers — **OPEN**
-- **Location:** `packages/wiki-web/server.js` mounts only `express.static` — no favicon route and no `Content-Security-Policy`/helmet headers.
-- **Impact:** Cosmetic 404 on favicon; missing CSP. Low-impact. Best bundled with the FINDING #3 CDN fix, since a CSP reinforces the local-first guarantee.
+### FINDING #4 — LOW — `/favicon.ico` 404 + no security headers — **ADDRESSED**
+- **Fix (this session):** added a `Content-Security-Policy` (`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'`) + `X-Content-Type-Options: nosniff` middleware in `server.js`, plus a `/favicon.ico` → 204 route. The CSP **enforces** the local-first guarantee — a reintroduced external `<script src>` is refused by the browser, so FINDING #3 cannot silently regress. `e2e:http` asserts the CSP header carries `script-src 'self'`.
 
 ---
 
@@ -74,8 +72,8 @@ After re-capturing with the barrier, **both routes render correct seeded data** 
 
 ### Blockers (must address before a release tag if wiki-web ships)
 
-- **[HIGH] FINDING #3 OPEN — `/graph` fetches `vis-network.min.js` from `unpkg.com` at runtime.** Confirmed at `packages/wiki-web/src/views/graph.js:8`, the only external runtime fetch in wiki-web. Breaks offline use and contradicts "zero cloud dependency." Fix: vendor the asset and serve it locally via `express.static`.
-- **[MEDIUM] Local commits not yet pushed.** The e2e harness is now committed and `.e2e-tmp/` is gitignored, so the working tree is clean. The branch is **ahead of `origin/chore/phase-0-release-hardening`** by the two fix commits (`ace91db`, `38936e4`) plus the harness commit — held locally pending an explicit push decision (publishing is outward-facing).
+- **[RESOLVED] FINDING #3 — `/graph` CDN dependency.** `vis-network` is now vendored + served locally and a CSP blocks external scripts; verified live (zero external requests) and guarded by `e2e:http` (12/12). No longer a blocker.
+- **[ACTION] Fast-forward `origin/master` to carry BUG #1 to the public default branch.** The fix + harness + CDN-hardening commits are pushed to `origin/chore/phase-0-release-hardening`, but `origin/master` is still at `e2db71a`, which **contains the BUG #1 crash** (shipped since v0.3.0). `master` is a strict ancestor of HEAD, so a clean fast-forward carries the fix to the public default branch with no force/rewrite. Held pending an explicit go (advancing published `master`).
 
 ### What's left (prioritized)
 
@@ -115,4 +113,4 @@ This runs the committed `e2e/` harness (`seed.mjs` + `serve.mjs` + `http-verify.
 
 ---
 
-*Grounded against `chore/phase-0-release-hardening` (fixes `ace91db`, `38936e4` + the e2e harness commit). CI gates GREEN: vitest 548/548, `tsc --build` typecheck exit 0, eslint exit 0, build via tsc; `npm run e2e:http` 9/9. Committed screenshots: `e2e/screenshots/{01-home,02-search,03-entity,04-frame,05-graph,06-wiki}.png`.*
+*Grounded against `chore/phase-0-release-hardening` (fixes `ace91db`, `38936e4`, the e2e harness commit, + the wiki-web local-first hardening commit). CI gates GREEN: vitest 549/549, `tsc --build` typecheck exit 0, eslint exit 0, build via tsc; `npm run e2e:http` 12/12 (incl. local-first guards). Committed screenshots: `e2e/screenshots/{01-home,02-search,03-entity,04-frame,05-graph,06-wiki}.png`.*
