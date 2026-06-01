@@ -5,6 +5,9 @@ coverage/
 *.mind
 *.tsbuildinfo
 .DS_Store
+
+# E2E throwaway fixtures, screenshots, server logs, Playwright output
+.e2e-tmp/
 .env
 .env.local
 .vscode/

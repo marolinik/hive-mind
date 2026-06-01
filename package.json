@@ -18,6 +18,10 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e:seed": "node e2e/seed.mjs",
+    "e2e:serve": "node e2e/serve.mjs",
+    "e2e:http": "node e2e/http-verify.mjs",
+    "e2e:visual": "playwright test -c e2e/playwright.config.ts",
     "clean": "tsc --build --clean && rm -rf packages/*/dist"
   },
   "repository": {
