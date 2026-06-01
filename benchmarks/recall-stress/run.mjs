@@ -107,6 +107,27 @@ const elapsedS = (Date.now() - t0) / 1000;
 const valid = rows.filter((r) => !r.error);
 const avgPrecision = valid.length ? valid.reduce((s, r) => s + r.score.precision, 0) / valid.length : 0;
 
+// Per-category rollup: group valid rows by `cat` and average precision@3 within
+// each. Surfaces WHICH query class regressed instead of only the global mean —
+// an edge-query collapse and a concept-recall collapse look identical in the
+// aggregate but mean very different things.
+function byCategory(validRows) {
+  const groups = new Map();
+  for (const r of validRows) {
+    const cat = String(r.cat ?? 'uncategorized');
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat).push(r.score.precision);
+  }
+  return [...groups.entries()]
+    .map(([cat, precs]) => ({
+      cat,
+      n: precs.length,
+      avg: precs.reduce((s, p) => s + p, 0) / precs.length,
+    }))
+    .sort((a, b) => a.cat.localeCompare(b.cat));
+}
+const categoryRollup = byCategory(valid);
+
 // Markdown report (optional).
 if (outPath) {
   const md = [
@@ -120,9 +141,22 @@ if (outPath) {
         ? `| ${i + 1} | ${r.cat ?? ''} | ${r.q} | ERROR | — |`
         : `| ${i + 1} | ${r.cat ?? ''} | ${r.q} | ${r.score.precision.toFixed(2)} | ${r.score.note} |`,
     ),
+    '',
+    '## By category',
+    '',
+    '| category | n | avg precision@3 |',
+    '|---|---|---|',
+    ...categoryRollup.map((c) => `| ${c.cat} | ${c.n} | ${c.avg.toFixed(2)} |`),
   ].join('\n');
   writeFileSync(outPath, md + '\n');
   console.log(`\nReport: ${outPath}`);
+}
+
+if (categoryRollup.length) {
+  console.log('\nby category:');
+  for (const c of categoryRollup) {
+    console.log(`  ${c.cat.padEnd(12)} prec@3=${c.avg.toFixed(2)}  (n=${c.n})`);
+  }
 }
 
 console.log(`\navg precision@3: ${avgPrecision.toFixed(2)} (min ${minPrecision})  ·  ${elapsedS.toFixed(1)}s (max ${maxSeconds}s)`);
