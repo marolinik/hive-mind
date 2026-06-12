@@ -80,6 +80,12 @@ export class MindDB {
       this.db
         .prepare("INSERT INTO meta (key, value) VALUES ('first_run_at', ?)")
         .run(new Date().toISOString());
+      // Fresh databases are born under the hm-stripped hash semantics, so the
+      // one-time rehash in runMigrations() never needs to run for them.
+      // Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+      this.db
+        .prepare("INSERT INTO meta (key, value) VALUES ('content_hash_semantics', 'hm-stripped')")
+        .run();
     } else {
       this.runMigrations();
       const hasFirstRun = this.db
@@ -222,6 +228,30 @@ export class MindDB {
     // One-time backfill: populate content_hash for legacy rows that predate the
     // column. Gated on the column being newly NULL, so it runs once per upgrade.
     this.backfillContentHash();
+
+    // One-time rehash: hashFrameContent changed from trim-only to
+    // stripHmPrefix + trim (provenance-insensitive dedup — mono-parity
+    // 2026-06-12). Rows hashed under the old semantics would never match new
+    // lookups for `[hm …]`-prefixed content, so recompute every row once.
+    // Idempotence: guarded by the meta flag 'content_hash_semantics'.
+    this.rehashContentHashes();
+  }
+
+  /** Recompute content_hash for ALL rows under the current hashFrameContent
+   *  semantics (hm-stripped + trimmed). Runs once per database — guarded by
+   *  the 'content_hash_semantics' meta flag. Transactional.
+   *  Forward-ported from waggle-os monorepo (mono-parity 2026-06-12). */
+  private rehashContentHashes(): void {
+    if (this.getMeta('content_hash_semantics') === 'hm-stripped') return;
+    const rows = this.db
+      .prepare('SELECT id, content FROM memory_frames')
+      .all() as { id: number; content: string }[];
+    const update = this.db.prepare('UPDATE memory_frames SET content_hash = ? WHERE id = ?');
+    const tx = this.db.transaction((items: { id: number; content: string }[]) => {
+      for (const r of items) update.run(hashFrameContent(r.content), r.id);
+      this.setMeta('content_hash_semantics', 'hm-stripped');
+    });
+    tx(rows);
   }
 
   /** Add a column to a table only if it isn't already present (idempotent migration). */

@@ -21,12 +21,20 @@
  * ("Harvest Claude artifacts adapter"). This adapter covers the three
  * content streams that ARE in the export; session artifacts stay parked.
  *
+ * Caption parity: message-level `attachments` / `files` arrays surface
+ * their text content — `extracted_content` is inlined as
+ * "[Attached: name] …" (capped 500 chars), bare names as
+ * "[Shared file: name]". Untrusted-field access is hardened through the
+ * raw-types narrowing helpers.
+ *
  * Extracted from Waggle OS `packages/core/src/harvest/claude-adapter.ts`.
+ * Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
  * Scrub: none — this module has no proprietary dependencies.
  */
 
 import { randomUUID } from 'node:crypto';
 import type { SourceAdapter, UniversalImportItem, ConversationMessage } from './types.js';
+import { asRecord, firstString, getArray, getString, type RawRecord } from './raw-types.js';
 
 export class ClaudeAdapter implements SourceAdapter {
   readonly sourceType = 'claude' as const;
@@ -34,38 +42,33 @@ export class ClaudeAdapter implements SourceAdapter {
 
   parse(input: unknown): UniversalImportItem[] {
     const items: UniversalImportItem[] = [];
+    const root = asRecord(input);
 
     // ── Conversations (historical default path) ───────────────────────
-    const conversations = Array.isArray(input)
-      ? input
-      : (input as { conversations?: unknown })?.conversations;
+    const conversations = Array.isArray(input) ? input : root && getArray(root, 'conversations');
     if (Array.isArray(conversations)) {
       for (const conv of conversations) {
         items.push(...this.parseConversation(conv));
       }
     }
 
-    const root = input as {
-      projects?: unknown;
-      memories?: unknown;
-      design_chats?: unknown;
-    };
-
     // ── Project-knowledge docs → artifact items ──────────────────────
-    if (Array.isArray(root?.projects)) {
-      for (const project of root.projects) {
+    const projects = root && getArray(root, 'projects');
+    if (projects) {
+      for (const project of projects) {
         items.push(...this.parseProjectDocs(project));
       }
     }
 
     // ── Memories stream (conversations_memory + project_memories) ────
-    if (root?.memories !== undefined) {
+    if (root && root.memories !== undefined) {
       items.push(...this.parseMemories(root.memories));
     }
 
     // ── Design chats stream ──────────────────────────────────────────
-    if (Array.isArray(root?.design_chats)) {
-      for (const dc of root.design_chats) {
+    const designChats = root && getArray(root, 'design_chats');
+    if (designChats) {
+      for (const dc of designChats) {
         items.push(...this.parseDesignChat(dc));
       }
     }
@@ -73,38 +76,69 @@ export class ClaudeAdapter implements SourceAdapter {
     return items;
   }
 
-  private parseConversation(conv: unknown): UniversalImportItem[] {
-    if (typeof conv !== 'object' || conv === null) return [];
-    const c = conv as Record<string, unknown>;
-    const title = (c.name as string | undefined) ?? (c.title as string | undefined) ?? 'Untitled';
+  /**
+   * Parse one Claude chat message (conversation or design-chat shape) into a
+   * ConversationMessage, applying the attachment/caption extraction.
+   * Returns null for messages with no surfaceable text.
+   */
+  private parseMessage(rawMsg: unknown): ConversationMessage | null {
+    const msg = asRecord(rawMsg);
+    if (!msg) return null;
+    const role = (getString(msg, 'sender') === 'human' || getString(msg, 'role') === 'user')
+      ? ('user' as const)
+      : ('assistant' as const);
+
+    // Handle content blocks (Claude format)
+    let text: string;
+    const blocks = getArray(msg, 'content');
+    if (blocks) {
+      text = blocks
+        .map(asRecord)
+        .filter((b): b is RawRecord => b !== null && b.type === 'text')
+        .map((b) => getString(b, 'text') ?? '')
+        .join('\n')
+        .trim();
+    } else {
+      text = (getString(msg, 'text') ?? getString(msg, 'content') ?? '').trim();
+    }
+
+    // Caption parity: Claude exports carry message-level `attachments`
+    // (with extracted_content — text already extracted from images/docs)
+    // and `files` arrays; both were never accessed.
+    const extras: string[] = [];
+    for (const key of ['attachments', 'files'] as const) {
+      for (const rawAtt of getArray(msg, key) ?? []) {
+        const att = asRecord(rawAtt);
+        if (!att) continue;
+        const name = getString(att, 'file_name') ?? getString(att, 'name');
+        const extracted = getString(att, 'extracted_content');
+        if (extracted && extracted.trim()) {
+          extras.push(`[Attached: ${name ?? 'file'}] ${extracted.trim().slice(0, 500)}`);
+        } else if (name) {
+          extras.push(`[Shared file: ${name}]`);
+        }
+      }
+    }
+    if (extras.length > 0) text = [text, ...extras].filter(Boolean).join('\n').trim();
+    if (!text) return null;
+
+    return {
+      role,
+      text,
+      timestamp: getString(msg, 'created_at') ?? getString(msg, 'timestamp'),
+    };
+  }
+
+  private parseConversation(rawConv: unknown): UniversalImportItem[] {
+    const conv = asRecord(rawConv);
+    if (!conv) return [];
+    const title = firstString(conv, 'name', 'title') || 'Untitled';
     const messages: ConversationMessage[] = [];
 
-    const chatMessages = (c.chat_messages as unknown[] | undefined) ?? (c.messages as unknown[] | undefined) ?? [];
+    const chatMessages = getArray(conv, 'chat_messages') ?? getArray(conv, 'messages') ?? [];
     for (const rawMsg of chatMessages) {
-      if (typeof rawMsg !== 'object' || rawMsg === null) continue;
-      const msg = rawMsg as Record<string, unknown>;
-      const role =
-        msg.sender === 'human' || msg.role === 'user'
-          ? ('user' as const)
-          : ('assistant' as const);
-
-      let text: string;
-      if (Array.isArray(msg.content)) {
-        text = (msg.content as unknown[])
-          .filter((b): b is Record<string, unknown> => typeof b === 'object' && b !== null && (b as { type?: unknown }).type === 'text')
-          .map((b) => (b.text as string | undefined) ?? '')
-          .join('\n')
-          .trim();
-      } else {
-        text = String(msg.text ?? msg.content ?? '').trim();
-      }
-      if (!text) continue;
-
-      messages.push({
-        role,
-        text,
-        timestamp: (msg.created_at as string | undefined) ?? (msg.timestamp as string | undefined),
-      });
+      const parsed = this.parseMessage(rawMsg);
+      if (parsed) messages.push(parsed);
     }
 
     if (messages.length === 0) return [];
@@ -116,43 +150,41 @@ export class ClaudeAdapter implements SourceAdapter {
       title,
       content: messages.map((m) => `${m.role}: ${m.text}`).join('\n\n'),
       messages,
-      timestamp: (c.created_at as string | undefined) ?? (c.create_time as string | undefined) ?? new Date().toISOString(),
+      timestamp: firstString(conv, 'created_at', 'create_time') ?? new Date().toISOString(),
       metadata: {
-        conversationId: (c.uuid as string | undefined) ?? (c.id as string | undefined),
+        conversationId: firstString(conv, 'uuid', 'id'),
         messageCount: messages.length,
-        projectId: (c.project_uuid as string | undefined) ?? undefined,
+        projectId: getString(conv, 'project_uuid') ?? undefined,
       },
     }];
   }
 
-  private parseProjectDocs(project: unknown): UniversalImportItem[] {
-    if (typeof project !== 'object' || project === null) return [];
-    const p = project as Record<string, unknown>;
-    const docs = p.docs as unknown[] | undefined;
-    if (!Array.isArray(docs)) return [];
+  private parseProjectDocs(rawProject: unknown): UniversalImportItem[] {
+    const project = asRecord(rawProject);
+    const docs = project && getArray(project, 'docs');
+    if (!project || !docs) return [];
     const out: UniversalImportItem[] = [];
     for (const rawDoc of docs) {
-      if (typeof rawDoc !== 'object' || rawDoc === null) continue;
-      const doc = rawDoc as Record<string, unknown>;
-      const content = typeof doc.content === 'string' ? doc.content : '';
+      const doc = asRecord(rawDoc);
+      if (!doc) continue;
+      const content = getString(doc, 'content') ?? '';
       if (content.length === 0) continue;
       out.push({
         id: randomUUID(),
         source: 'claude',
         type: 'artifact',
-        title: (doc.filename as string | undefined) ?? (doc.title as string | undefined) ?? 'Project Document',
+        title: firstString(doc, 'filename', 'title') ?? 'Project Document',
         content,
-        timestamp:
-          (doc.created_at as string | undefined)
-          ?? (p.updated_at as string | undefined)
-          ?? (p.created_at as string | undefined)
+        timestamp: getString(doc, 'created_at')
+          ?? getString(project, 'updated_at')
+          ?? getString(project, 'created_at')
           ?? new Date().toISOString(),
         metadata: {
-          projectName: p.name as string | undefined,
-          projectUuid: p.uuid as string | undefined,
+          projectName: getString(project, 'name'),
+          projectUuid: getString(project, 'uuid'),
           type: 'project_knowledge',
-          docUuid: doc.uuid as string | undefined,
-          filename: doc.filename as string | undefined,
+          docUuid: getString(doc, 'uuid'),
+          filename: getString(doc, 'filename'),
         },
       });
     }
@@ -166,16 +198,15 @@ export class ClaudeAdapter implements SourceAdapter {
     const arr = Array.isArray(input) ? input : [input];
     const out: UniversalImportItem[] = [];
 
-    for (const entry of arr) {
-      if (typeof entry !== 'object' || entry === null) continue;
-      const e = entry as Record<string, unknown>;
-      const accountUuid = typeof e.account_uuid === 'string' ? e.account_uuid : undefined;
+    for (const rawEntry of arr) {
+      const entry = asRecord(rawEntry);
+      if (!entry) continue;
+      const accountUuid = getString(entry, 'account_uuid');
 
       // conversations_memory — usually a single long string of user-about facts
-      if (e.conversations_memory !== undefined && e.conversations_memory !== null) {
-        const content = typeof e.conversations_memory === 'string'
-          ? e.conversations_memory
-          : JSON.stringify(e.conversations_memory);
+      const convMem = entry.conversations_memory;
+      if (convMem !== undefined && convMem !== null) {
+        const content = typeof convMem === 'string' ? convMem : JSON.stringify(convMem);
         if (content.length > 0) {
           out.push({
             id: randomUUID(),
@@ -193,28 +224,24 @@ export class ClaudeAdapter implements SourceAdapter {
       }
 
       // project_memories — map of project_uuid -> memory string
-      if (e.project_memories !== undefined && e.project_memories !== null) {
-        const pm = e.project_memories;
-        if (typeof pm === 'object' && !Array.isArray(pm)) {
-          for (const [projUuid, memValue] of Object.entries(pm as Record<string, unknown>)) {
-            const content = typeof memValue === 'string'
-              ? memValue
-              : JSON.stringify(memValue);
-            if (content.length > 0) {
-              out.push({
-                id: randomUUID(),
-                source: 'claude',
-                type: 'memory',
-                title: `Claude Memory — Project ${projUuid}`,
-                content,
-                timestamp: new Date().toISOString(),
-                metadata: {
-                  memoryKind: 'project_memory',
-                  projectUuid: projUuid,
-                  accountUuid,
-                },
-              });
-            }
+      const projectMemories = asRecord(entry.project_memories);
+      if (projectMemories) {
+        for (const [projUuid, memValue] of Object.entries(projectMemories)) {
+          const content = typeof memValue === 'string' ? memValue : JSON.stringify(memValue);
+          if (content.length > 0) {
+            out.push({
+              id: randomUUID(),
+              source: 'claude',
+              type: 'memory',
+              title: `Claude Memory — Project ${projUuid}`,
+              content,
+              timestamp: new Date().toISOString(),
+              metadata: {
+                memoryKind: 'project_memory',
+                projectUuid: projUuid,
+                accountUuid,
+              },
+            });
           }
         }
       }
@@ -224,36 +251,14 @@ export class ClaudeAdapter implements SourceAdapter {
   }
 
   private parseDesignChat(input: unknown): UniversalImportItem[] {
-    if (typeof input !== 'object' || input === null) return [];
-    const dc = input as Record<string, unknown>;
+    const dc = asRecord(input);
+    if (!dc) return [];
     const messages: ConversationMessage[] = [];
-    const msgs = (dc.messages as unknown[] | undefined) ?? (dc.chat_messages as unknown[] | undefined) ?? [];
+    const msgs = getArray(dc, 'messages') ?? getArray(dc, 'chat_messages') ?? [];
 
     for (const rawMsg of msgs) {
-      if (typeof rawMsg !== 'object' || rawMsg === null) continue;
-      const m = rawMsg as Record<string, unknown>;
-      const role =
-        m.role === 'user' || m.sender === 'human'
-          ? ('user' as const)
-          : ('assistant' as const);
-
-      let text: string;
-      if (Array.isArray(m.content)) {
-        text = (m.content as unknown[])
-          .filter((b): b is Record<string, unknown> => typeof b === 'object' && b !== null && (b as { type?: unknown }).type === 'text')
-          .map((b) => (b.text as string | undefined) ?? '')
-          .join('\n')
-          .trim();
-      } else {
-        text = String(m.text ?? m.content ?? '').trim();
-      }
-      if (!text) continue;
-
-      messages.push({
-        role,
-        text,
-        timestamp: (m.created_at as string | undefined) ?? (m.timestamp as string | undefined),
-      });
+      const parsed = this.parseMessage(rawMsg);
+      if (parsed) messages.push(parsed);
     }
 
     if (messages.length === 0) return [];
@@ -262,13 +267,13 @@ export class ClaudeAdapter implements SourceAdapter {
       id: randomUUID(),
       source: 'claude',
       type: 'conversation',
-      title: (dc.title as string | undefined) ?? 'Claude Design Chat',
+      title: getString(dc, 'title') ?? 'Claude Design Chat',
       content: messages.map((m) => `${m.role}: ${m.text}`).join('\n\n'),
       messages,
-      timestamp: (dc.created_at as string | undefined) ?? new Date().toISOString(),
+      timestamp: getString(dc, 'created_at') ?? new Date().toISOString(),
       metadata: {
-        designChatUuid: dc.uuid as string | undefined,
-        projectUuid: (dc.project as string | undefined) ?? undefined,
+        designChatUuid: getString(dc, 'uuid'),
+        projectUuid: getString(dc, 'project') ?? undefined,
         messageCount: messages.length,
         stream: 'design_chats',
       },

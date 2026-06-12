@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dedup } from './dedup.js';
+import { dedup, harvestSetHash } from './dedup.js';
 import type { DistilledKnowledge } from './types.js';
 
 function makeKnowledge(content: string, importance: 'critical' | 'important' | 'normal' | 'temporary' = 'normal'): DistilledKnowledge {
@@ -90,5 +90,51 @@ describe('dedup', () => {
     const loose = dedup([incoming], [existing], 0.3);
     expect(loose.unique).toHaveLength(0);
     expect(loose.duplicatesSkipped).toBe(1);
+  });
+});
+
+// harvestSetHash — skip unchanged-content rescans.
+// Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+//
+// The harvest caller hashes an incoming item set and, when it matches the
+// source's stored last_content_hash, skips the O(n·500) per-item rescan.
+// The digest must be: deterministic, order-independent (adapter jitter), and
+// sensitive to any id/title/content edit.
+describe('harvestSetHash', () => {
+  const A = { id: '1', title: 'Alpha', content: 'first body' };
+  const B = { id: '2', title: 'Beta', content: 'second body' };
+
+  it('is deterministic for the same set', () => {
+    expect(harvestSetHash([A, B])).toBe(harvestSetHash([A, B]));
+  });
+
+  it('is order-independent (adapter ordering jitter must not change the digest)', () => {
+    expect(harvestSetHash([A, B])).toBe(harvestSetHash([B, A]));
+  });
+
+  it('changes when an item content is edited (same id)', () => {
+    const edited = { ...A, content: 'first body — edited' };
+    expect(harvestSetHash([A, B])).not.toBe(harvestSetHash([edited, B]));
+  });
+
+  it('changes when an item title is edited', () => {
+    const edited = { ...A, title: 'Alpha 2' };
+    expect(harvestSetHash([A, B])).not.toBe(harvestSetHash([edited, B]));
+  });
+
+  it('changes when an item is added or removed', () => {
+    expect(harvestSetHash([A, B])).not.toBe(harvestSetHash([A]));
+    expect(harvestSetHash([A])).not.toBe(harvestSetHash([]));
+  });
+
+  it('tolerates missing optional fields without throwing', () => {
+    expect(() => harvestSetHash([{ content: 'x' }, { id: 'y' }, {}])).not.toThrow();
+  });
+
+  it('distinguishes two items that swap field values (id+title+content are positional per item)', () => {
+    // Same multiset of strings but recombined differently → different digest.
+    const x = { id: '1', title: 'T', content: 'C' };
+    const y = { id: '1', title: 'C', content: 'T' };
+    expect(harvestSetHash([x])).not.toBe(harvestSetHash([y]));
   });
 });

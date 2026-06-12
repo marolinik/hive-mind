@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync, existsSync } from 'node:fs';
 import { MindDB } from './db.js';
-import { FrameStore } from './frames.js';
+import { FrameStore, stripHmPrefix } from './frames.js';
 
 describe('FrameStore', () => {
   let dbPath: string;
@@ -231,5 +231,65 @@ describe('FrameStore', () => {
     expect(row.content_hash).toBeTruthy();
     const redup = frames.createIFrame('gop-test', 'legacy row body');
     expect(redup.id).toBe(a.id);
+  });
+
+  // ── Forward-ported from waggle-os monorepo (mono-parity 2026-06-12) ──────
+
+  it('dedups provenance-insensitively: same body under different [hm …] prefixes collapses', () => {
+    const a = frames.createIFrame(
+      'gop-test',
+      '[hm session:abc src:claude-code event:stop] the user prefers dark mode',
+    );
+    const b = frames.createIFrame(
+      'gop-test',
+      '[hm session:xyz src:cursor event:stop] the user prefers dark mode',
+    );
+    expect(b.id).toBe(a.id);
+    // Bare body (no prefix) also collapses into the same frame.
+    const c = frames.createIFrame('gop-test', 'the user prefers dark mode');
+    expect(c.id).toBe(a.id);
+  });
+
+  it('stripHmPrefix removes only a leading [hm …] block, never mid-content brackets', () => {
+    expect(stripHmPrefix('[hm session:1 src:x] body text')).toBe('body text');
+    expect(stripHmPrefix('no prefix [hm session:1] later')).toBe('no prefix [hm session:1] later');
+    expect(stripHmPrefix('plain body')).toBe('plain body');
+  });
+
+  it('touch() returns the new access_count, or undefined for an unknown id', () => {
+    const f = frames.createIFrame('gop-test', 'touch target');
+    expect(f.access_count).toBe(0);
+    expect(frames.touch(f.id)).toBe(1);
+    expect(frames.touch(f.id)).toBe(2);
+    expect(frames.touch(999_999)).toBeUndefined();
+  });
+
+  it('deleteByContentPrefix deletes exactly the frames starting with the literal prefix', () => {
+    const a1 = frames.createIFrame('gop-test', 'card:alice v1 details');
+    const a2 = frames.createIFrame('gop-test', 'card:alice v2 details');
+    const bob = frames.createIFrame('gop-test', 'card:bob v1 details');
+
+    const deleted = frames.deleteByContentPrefix('card:alice');
+    expect(deleted).toBe(2);
+    expect(frames.getById(a1.id)).toBeUndefined();
+    expect(frames.getById(a2.id)).toBeUndefined();
+    expect(frames.getById(bob.id)).toBeDefined();
+    // FTS rows cleaned up too (routes through delete()).
+    const ftsLeft = db
+      .getDatabase()
+      .prepare('SELECT COUNT(*) AS n FROM memory_frames_fts WHERE rowid IN (?, ?)')
+      .get(a1.id, a2.id) as { n: number };
+    expect(ftsLeft.n).toBe(0);
+  });
+
+  it('deleteByContentPrefix escapes LIKE metacharacters (literal match only)', () => {
+    const literal = frames.createIFrame('gop-test', '100% done with the rollout');
+    const decoy = frames.createIFrame('gop-test', '1000 done with the rollout');
+
+    // An unescaped '%' would wildcard-match the decoy too.
+    const deleted = frames.deleteByContentPrefix('100%');
+    expect(deleted).toBe(1);
+    expect(frames.getById(literal.id)).toBeUndefined();
+    expect(frames.getById(decoy.id)).toBeDefined();
   });
 });

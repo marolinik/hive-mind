@@ -136,8 +136,12 @@ describe('embed-truncation equivalence golden-diff (justifies deleting .harvest/
     });
   });
 
-  // ── (2) MODEL-AWARE CAP: 6000 == legacy on the legacy model; 24000 in-repo ──
-  describe('maxEmbedCharsForModel: 6000 (legacy parity) vs 24000 (in-repo superset)', () => {
+  // ── (2) MODEL-AWARE CAP: 6000 == legacy on the legacy model; 8000 in-repo ──
+  // Forward-ported from waggle-os monorepo (mono-parity 2026-06-12): the *-8k
+  // branch was reduced 24000 → 8000 — probe finding: '-8k' names can be
+  // architecture-capped at 2048 tokens (nomic-bert), so a 24K-char cap sent
+  // every long frame down the mock-fallback path.
+  describe('maxEmbedCharsForModel: 6000 (legacy parity) vs 8000 (in-repo superset)', () => {
     it('returns 6000 for ordinary models — identical to legacy hardcoded MAX_CHARS', () => {
       // nomic-embed-text is THE legacy model (OLLAMA_MODEL default in the .cjs).
       // On this model the in-repo effective cap === the legacy 6000 constant.
@@ -148,10 +152,10 @@ describe('embed-truncation equivalence golden-diff (justifies deleting .harvest/
       expect(maxEmbedCharsForModel('text-embedding-3-small')).toBe(6000);
     });
 
-    it('DOCUMENTED DELTA (model-aware cap): returns 24000 for *-8k / num_ctx 8192 — pure in-repo superset, no legacy analogue', () => {
-      expect(maxEmbedCharsForModel('nomic-embed-text-8k')).toBe(24000);
-      expect(maxEmbedCharsForModel('custom (num_ctx 8192)')).toBe(24000);
-      // The 24000 branch does NOT exist in the .cjs (which hardcodes 6000
+    it('DOCUMENTED DELTA (model-aware cap): returns 8000 for *-8k / num_ctx 8192 — pure in-repo superset, no legacy analogue', () => {
+      expect(maxEmbedCharsForModel('nomic-embed-text-8k')).toBe(8000);
+      expect(maxEmbedCharsForModel('custom (num_ctx 8192)')).toBe(8000);
+      // The 8000 branch does NOT exist in the .cjs (which hardcodes 6000
       // unconditionally), so it is asserted as an intentional divergence, not
       // diffed against legacy.
       expect(maxEmbedCharsForModel('nomic-embed-text-8k')).not.toBe(LEGACY_MAX_CHARS);
@@ -159,7 +163,7 @@ describe('embed-truncation equivalence golden-diff (justifies deleting .harvest/
 
     it('does NOT mistake an embedded "8k" substring for the *-8k variant', () => {
       // The regex requires a -/_/. delimiter before "8k" and a word boundary
-      // after, so "model8kfoo" or "a8kb" must NOT trip the 24000 branch.
+      // after, so "model8kfoo" or "a8kb" must NOT trip the 8000 branch.
       expect(maxEmbedCharsForModel('model8kfoo')).toBe(6000);
       expect(maxEmbedCharsForModel('foo-8khz')).toBe(6000); // no \b after 8k
     });

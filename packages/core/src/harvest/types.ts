@@ -162,3 +162,13 @@ export interface SourceAdapter {
 export interface FilesystemAdapter extends SourceAdapter {
   scan(dirPath: string): UniversalImportItem[];
 }
+
+/**
+ * Unified per-frame content cap for harvest imports. Upstream ingest surfaces
+ * had drifted (one door capped at 2,000 chars, another at 10,000) — a 5x
+ * divergence in what the same export preserved depending on the door it came
+ * through. Every harvest frame writer should slice through this constant.
+ *
+ * Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+ */
+export const HARVEST_FRAME_CONTENT_CAP = 10_000;

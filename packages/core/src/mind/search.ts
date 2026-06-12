@@ -16,6 +16,7 @@ import type { MindDB } from './db.js';
 import type { Embedder } from './embeddings.js';
 import type { MemoryFrame, Importance } from './frames.js';
 import type { Reranker } from './inprocess-reranker.js';
+import { chunkText, type ChunkOptions } from './chunker.js';
 import { createCoreLogger } from '../logger.js';
 import {
   computeRelevance,
@@ -88,8 +89,31 @@ const RRF_K = 60;
 
 const log = createCoreLogger('search');
 
+// Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+/**
+ * Chunk-level retrieval flag — DEFAULT ON. Gates BOTH the write side
+ * (indexFrame / indexFramesBatch also chunk-index the frame) and the read
+ * side (search() queries memory_frame_chunks_vec, falling back to whole-frame
+ * vectors while the chunk index is empty). Kill switch:
+ * HIVE_MIND_CHUNK_RETRIEVAL=0. `indexChunksForFrame` / `rechunkAllFrames`
+ * stay callable regardless of the flag (backfill + eval + `hive-mind
+ * maintenance --rechunk-all`).
+ */
+export function chunkRetrievalEnabled(): boolean {
+  return process.env.HIVE_MIND_CHUNK_RETRIEVAL !== '0';
+}
+
 function f32ToBlob(f32: Float32Array): Uint8Array {
   return new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength);
+}
+
+/**
+ * Escape LIKE metacharacters (`%`, `_`) and the escape char itself (`\`) so the
+ * keyword-fallback term is matched literally. Pair with `ESCAPE '\'` on the LIKE.
+ * Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+ */
+function escapeLikeTerm(term: string): string {
+  return term.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
 export class HybridSearch {
@@ -137,15 +161,27 @@ export class HybridSearch {
     const { limit = 20, gopId, profile = 'balanced', context = {}, since, until } = options;
     const weights = SCORING_PROFILES[profile];
 
-    // Prefer chunk-level vector search when chunks_vec is populated:
-    // discriminates better on domain-homogeneous corpora than whole-frame
-    // embeddings. vectorSearchChunks returns null when no chunks exist,
-    // signalling clean fallback to the whole-frame path. Both paths return
-    // frame IDs so the rest of the RRF + scoring pipeline is unchanged.
-    const chunkResults = await this.vectorSearchChunks(query, limit * 2, gopId);
+    // Slot-consumption fix (forward-ported from waggle-os monorepo,
+    // mono-parity 2026-06-12): the since/until filter applies AFTER the
+    // lanes run (as a WHERE over candidate ids), so out-of-window candidates
+    // would otherwise consume lane slots and shrink results below `limit`
+    // even when in-window frames exist deeper in the lanes. Over-fetch the
+    // lanes when a temporal window is active so the post-filter has depth.
+    const laneFetch = since || until ? limit * 10 : limit * 2;
+
+    // Prefer chunk-level vector search when the flag is on AND chunks_vec is
+    // populated: discriminates better on domain-homogeneous corpora than
+    // whole-frame embeddings. vectorSearchChunks returns null when no chunks
+    // exist, signalling clean fallback to the whole-frame path. Both paths
+    // return frame IDs so the rest of the RRF + scoring pipeline is
+    // unchanged. Flag off → chunkResults is null without touching the chunk
+    // tables.
+    const chunkResults = chunkRetrievalEnabled()
+      ? await this.vectorSearchChunks(query, laneFetch, gopId)
+      : null;
     const [keywordResults, vectorResults] = await Promise.all([
-      this.keywordSearch(query, limit * 2, gopId),
-      chunkResults !== null ? Promise.resolve(chunkResults) : this.vectorSearch(query, limit * 2, gopId),
+      this.keywordSearch(query, laneFetch, gopId),
+      chunkResults !== null ? Promise.resolve(chunkResults) : this.vectorSearch(query, laneFetch, gopId),
     ]);
 
     // RRF fusion.
@@ -167,12 +203,27 @@ export class HybridSearch {
     const temporalConditions: string[] = [];
     const temporalParams: unknown[] = [...frameIds];
 
+    // Fencepost fix (forward-ported from waggle-os monorepo, mono-parity
+    // 2026-06-12): `created_at` carries mixed formats across write paths —
+    // `datetime('now')` ("YYYY-MM-DD HH:MM:SS") vs harvest ISO
+    // ("YYYY-MM-DDT…Z"). A date-only `until` string-compares BELOW any
+    // same-day timestamp ("2026-03-21T10:00" > "2026-03-21"), silently
+    // excluding the whole final day. Compare date-only bounds on the
+    // 10-char date prefix instead — format-agnostic and inclusive.
     if (since) {
-      temporalConditions.push('created_at >= ?');
+      if (since.length === 10) {
+        temporalConditions.push('substr(created_at, 1, 10) >= ?');
+      } else {
+        temporalConditions.push('created_at >= ?');
+      }
       temporalParams.push(since);
     }
     if (until) {
-      temporalConditions.push('created_at <= ?');
+      if (until.length === 10) {
+        temporalConditions.push('substr(created_at, 1, 10) <= ?');
+      } else {
+        temporalConditions.push('created_at <= ?');
+      }
       temporalParams.push(until);
     }
 
@@ -195,6 +246,9 @@ export class HybridSearch {
       const relevanceScore = computeRelevance(
         {
           id: frame.id,
+          // Temporal decay anchors on write time, not access time
+          // (forward-ported from waggle-os monorepo, mono-parity 2026-06-12).
+          created_at: frame.created_at,
           last_accessed: frame.last_accessed,
           access_count: frame.access_count,
           importance: frame.importance as Importance,
@@ -293,7 +347,57 @@ export class HybridSearch {
       const rows = raw.prepare(sql).all(...params) as { id: number }[];
       return rows.map((r) => r.id);
     } catch {
-      // FTS5 parse error — return empty; callers can fall back to alternative strategies.
+      // FTS5 parse error (e.g. user query with FTS5-special chars that survived
+      // sanitization) — fall back to a LIKE keyword scan over the same column so
+      // we return best-effort matches instead of a false "no memory found".
+      // Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+      return this.likeFallbackSearch(query, limit, gopId);
+    }
+  }
+
+  /**
+   * LIKE-based keyword fallback over memory_frames.content. Used when the FTS5
+   * MATCH query throws a parse error (e.g. an unbalanced quote or other FTS5
+   * operator the user typed literally). The raw query is split into word tokens
+   * — stripping the punctuation that caused the FTS5 error, mirroring the
+   * primary sanitizer — and matched with OR-ed LIKE clauses for best-effort
+   * recall. Bound parameters only (the term is never interpolated) and LIKE
+   * metachars (`%`, `_`, `\`) are escaped with an ESCAPE clause so each token
+   * matches literally. If no usable token survives, a single literal LIKE over
+   * the whole escaped query is used.
+   * Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+   */
+  private likeFallbackSearch(query: string, limit: number, gopId?: string): number[] {
+    const raw = this.db.getDatabase();
+
+    const tokens = query
+      .split(/\s+/)
+      .map((w) => w.replace(/[^\w]/g, '')) // strip punctuation (incl. FTS5 operators)
+      .filter((w) => w.length > 0);
+    const terms = (tokens.length > 0 ? tokens : [query]).map((t) => `%${escapeLikeTerm(t)}%`);
+
+    const likeClause = terms.map(() => `content LIKE ? ESCAPE '\\'`).join(' OR ');
+
+    try {
+      if (gopId) {
+        const rows = raw
+          .prepare(
+            `SELECT id FROM memory_frames
+             WHERE (${likeClause}) AND gop_id = ?
+             ORDER BY created_at DESC LIMIT ?`,
+          )
+          .all(...terms, gopId, limit) as { id: number }[];
+        return rows.map((r) => r.id);
+      }
+      const rows = raw
+        .prepare(
+          `SELECT id FROM memory_frames
+           WHERE (${likeClause})
+           ORDER BY created_at DESC LIMIT ?`,
+        )
+        .all(...terms, limit) as { id: number }[];
+      return rows.map((r) => r.id);
+    } catch {
       return [];
     }
   }
@@ -354,6 +458,22 @@ export class HybridSearch {
     raw
       .prepare(`INSERT INTO memory_frames_vec (rowid, embedding) VALUES (${id}, ?)`)
       .run(f32ToBlob(embedding));
+
+    // Keep the chunk index in lockstep with live frame writes (previously
+    // chunks were only populated via `maintenance --rechunk-all`). Soft-fail
+    // — a chunk-indexing error must never break the primary whole-frame
+    // write (mirrors the reranker soft-fail stance).
+    // Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+    if (chunkRetrievalEnabled()) {
+      try {
+        await this.indexChunksForFrame(frameId, content);
+      } catch (err) {
+        log.warn(
+          `chunk indexing failed for frame ${id} (whole-frame vector written): ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
   }
 
   async indexFramesBatch(frames: { id: number; content: string }[]): Promise<void> {
@@ -377,6 +497,23 @@ export class HybridSearch {
       }
     });
     insertAll();
+
+    // Chunk-index batch writes too, so frames ingested via the batch path
+    // (harvest) aren't invisible to the chunk lane. Soft-fail per frame —
+    // see indexFrame.
+    // Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+    if (chunkRetrievalEnabled()) {
+      for (const f of frames) {
+        try {
+          await this.indexChunksForFrame(f.id, f.content);
+        } catch (err) {
+          log.warn(
+            `chunk indexing failed for frame ${Math.trunc(f.id)} (whole-frame vector written): ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    }
   }
 
   // ── Chunk-level indexing (Phase 3b-3 chunking) ─────────────────────────
@@ -390,12 +527,14 @@ export class HybridSearch {
   /**
    * Replace all chunks for a frame: clears existing chunks/vec rows for the
    * frame, re-chunks the content, embeds each chunk, inserts both rows.
-   * Idempotent — safe to call repeatedly. Used by --rechunk-all migration.
+   * Idempotent — safe to call repeatedly. Used by the --rechunk-all migration
+   * and by the flag-gated indexFrame path. NOT itself gated on
+   * HIVE_MIND_CHUNK_RETRIEVAL (backfill + eval call it directly).
    */
   async indexChunksForFrame(
     frameId: number,
     content: string,
-    opts: { maxChars?: number; overlapChars?: number; minChunkChars?: number } = {},
+    opts: ChunkOptions = {},
   ): Promise<number> {
     if (!Number.isFinite(frameId) || frameId <= 0) {
       throw new Error('Invalid frame ID for chunk indexing');
@@ -404,13 +543,10 @@ export class HybridSearch {
     const raw = this.db.getDatabase();
     const id = Math.trunc(frameId);
 
-    // Lazy import to keep search.ts free of cycle risk.
-    const { chunkText } = await import('./chunker.js');
     const chunks = chunkText(content, opts);
     if (chunks.length === 0) return 0;
 
-    // Embed all chunks. Use embedBatch when the embedder supports it for
-    // amortised HTTP overhead on Ollama/API providers.
+    // Embed all chunks. embedBatch amortises HTTP overhead on Ollama/API providers.
     const texts = chunks.map((c) => c.text);
     const embeddings = await this.embedder.embedBatch(texts);
 
@@ -508,4 +644,45 @@ export class HybridSearch {
       return null;
     }
   }
+}
+
+// Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+export interface RechunkResult {
+  framesProcessed: number;
+  chunksCreated: number;
+  framesFailed: number;
+}
+
+/**
+ * (Re)chunk + chunk-index every non-deprecated frame in the .mind. Idempotent
+ * per-frame — indexChunksForFrame deletes a frame's existing chunks before
+ * re-inserting. One bad frame doesn't abort the batch (logged + counted).
+ * Library-level backfill/eval helper (the CLI `maintenance --rechunk-all`
+ * remains the operator surface) — NOT gated on HIVE_MIND_CHUNK_RETRIEVAL
+ * (it must be runnable before any flag flip).
+ */
+export async function rechunkAllFrames(db: MindDB, search: HybridSearch): Promise<RechunkResult> {
+  const raw = db.getDatabase();
+  const frames = raw
+    .prepare("SELECT id, content FROM memory_frames WHERE importance != 'deprecated' ORDER BY id ASC")
+    .all() as Array<{ id: number; content: string }>;
+
+  let framesProcessed = 0;
+  let chunksCreated = 0;
+  let framesFailed = 0;
+
+  for (const f of frames) {
+    try {
+      const n = await search.indexChunksForFrame(f.id, f.content);
+      framesProcessed++;
+      chunksCreated += n;
+    } catch (err) {
+      framesFailed++;
+      log.warn(
+        `rechunkAllFrames: frame ${f.id} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  return { framesProcessed, chunksCreated, framesFailed };
 }

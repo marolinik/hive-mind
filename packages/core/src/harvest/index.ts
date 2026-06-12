@@ -13,8 +13,10 @@ export * from './types.js';
 export { chunkByParagraphs } from './chunk-utils.js';
 export { CLASSIFY_PROMPT, EXTRACT_PROMPT, SYNTHESIZE_PROMPT } from './prompts.js';
 export { HarvestSourceStore } from './source-store.js';
-export { dedup } from './dedup.js';
+export { dedup, harvestSetHash } from './dedup.js';
 export type { DedupResult } from './dedup.js';
+export { asRecord, getString, getNumber, getArray, firstString } from './raw-types.js';
+export type { RawRecord } from './raw-types.js';
 
 // Parse-only adapters (Wave 3B)
 export { ChatGPTAdapter } from './chatgpt-adapter.js';
@@ -37,3 +39,33 @@ export type { LLMCallFn, PipelineOptions } from './pipeline.js';
 // Harvest run lifecycle tracking (backported from Waggle OS — resume/interrupt support)
 export { HarvestRunStore } from './run-store.js';
 export type { HarvestRun, HarvestRunStatus } from './run-store.js';
+
+// Memory-lane extraction passes (facts / events / profiles).
+// Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+export {
+  extractMemoryLanes,
+  writeMemoryLaneFrames,
+  MIND_FACT_PREFIX,
+  MIND_EVENT_PREFIX,
+  MIND_PROFILE_PREFIX,
+} from './extract-memory-lanes.js';
+export type {
+  ExtractedFact,
+  ExtractedEvent,
+  ExtractedProfile,
+  MemoryLaneExtraction,
+  WriteLaneFramesResult,
+} from './extract-memory-lanes.js';
+
+// Per-turn verbatim dialogue storage (raw-detail lane, write side).
+// Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+export {
+  writeRawTurnFrames,
+  rawTurnHeader,
+  parseRawTurnHeader,
+  rawTurnConvKey,
+  MIND_RAWTURN_PREFIX,
+  MAX_TURNS_PER_ITEM,
+  RAWDETAIL_KILL_SWITCH,
+} from './raw-turns.js';
+export type { WriteRawTurnsResult, ParsedRawTurnHeader } from './raw-turns.js';

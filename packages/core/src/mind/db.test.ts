@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { MindDB, EmbeddingDimMismatchError } from './db.js';
+import { hashFrameContent } from './content-hash.js';
 
 describe('MindDB', () => {
   let dbPath: string;
@@ -165,6 +167,68 @@ describe('MindDB', () => {
       model: 'nomic-embed-text',
       dim: 768,
     });
+  });
+
+  // ── content_hash semantics migration (mono-parity 2026-06-12) ───────────
+  // hashFrameContent changed from trim-only to stripHmPrefix + trim. Legacy
+  // databases carry trim-only hashes; runMigrations() must rehash every row
+  // once, guarded by the 'content_hash_semantics' meta flag.
+
+  it('marks fresh databases with content_hash_semantics = hm-stripped (no rehash needed)', () => {
+    const flag = db!
+      .getDatabase()
+      .prepare("SELECT value FROM meta WHERE key = 'content_hash_semantics'")
+      .get() as { value: string } | undefined;
+    expect(flag?.value).toBe('hm-stripped');
+  });
+
+  it('rehashes legacy trim-only content_hash values on open and sets the meta flag', () => {
+    const raw = db!.getDatabase();
+    raw.prepare('INSERT INTO sessions (gop_id, project_id) VALUES (?, ?)').run('gop-1', 'p');
+    const content = '[hm session:abc src:claude-code] the actual body';
+    // Legacy semantics: sha256 over content.trim() WITHOUT stripping the prefix.
+    const legacyHash = createHash('sha256').update(content.trim()).digest('hex');
+    raw
+      .prepare(
+        `INSERT INTO memory_frames (frame_type, gop_id, content, importance, source, content_hash)
+         VALUES ('I', 'gop-1', ?, 'normal', 'user_stated', ?)`,
+      )
+      .run(content, legacyHash);
+    // Simulate a pre-migration database: flag absent.
+    raw.prepare("DELETE FROM meta WHERE key = 'content_hash_semantics'").run();
+    db!.close();
+
+    db = new MindDB(dbPath);
+    const row = db
+      .getDatabase()
+      .prepare('SELECT content_hash FROM memory_frames WHERE content = ?')
+      .get(content) as { content_hash: string };
+    expect(row.content_hash).toBe(hashFrameContent(content)); // hm-stripped semantics
+    expect(row.content_hash).not.toBe(legacyHash);
+    const flag = db
+      .getDatabase()
+      .prepare("SELECT value FROM meta WHERE key = 'content_hash_semantics'")
+      .get() as { value: string } | undefined;
+    expect(flag?.value).toBe('hm-stripped');
+  });
+
+  it('rehash is idempotent: a second open under the flag leaves hashes untouched', () => {
+    const raw = db!.getDatabase();
+    raw.prepare('INSERT INTO sessions (gop_id, project_id) VALUES (?, ?)').run('gop-1', 'p');
+    raw
+      .prepare(
+        `INSERT INTO memory_frames (frame_type, gop_id, content, importance, source, content_hash)
+         VALUES ('I', 'gop-1', 'stable body', 'normal', 'user_stated', ?)`,
+      )
+      .run(hashFrameContent('stable body'));
+    db!.close();
+
+    db = new MindDB(dbPath); // flag already 'hm-stripped' → rehash skipped
+    const row = db
+      .getDatabase()
+      .prepare("SELECT content_hash FROM memory_frames WHERE content = 'stable body'")
+      .get() as { content_hash: string };
+    expect(row.content_hash).toBe(hashFrameContent('stable body'));
   });
 
   it('ensureEmbeddingFingerprint warns but ALLOWS a same-dim model change', () => {
