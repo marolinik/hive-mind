@@ -139,7 +139,7 @@ export async function fetchRawDetailLane(
   const excludeIds = opts.excludeIds ?? new Set<number>();
 
   // ── Pool ──────────────────────────────────────────────────────────────
-  let pool: FrameRow[] = [];
+  let pool: FrameRow[];
   if (opts.window) {
     pool = windowPool(db, opts.window.since, opts.window.until);
     if (pool.length > WINDOW_POOL_MAX) {
