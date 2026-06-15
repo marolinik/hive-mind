@@ -10,44 +10,60 @@
  * "assistant"/"gemini" → assistant). Text extraction handles both the
  * structured `parts[]` format and flat `text` / `content` strings.
  *
+ * Caption parity: media parts were silently dropped — `fileData` parts
+ * surface as "[Shared file: uri|mime]" and `inlineData` parts as
+ * "[Shared media: mime]" presence signals. Untrusted-field access is
+ * hardened through the raw-types narrowing helpers.
+ *
  * Extracted from Waggle OS `packages/core/src/harvest/gemini-adapter.ts`.
+ * Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
  * Scrub: none — this module has no proprietary dependencies.
  */
 
 import { randomUUID } from 'node:crypto';
 import type { SourceAdapter, UniversalImportItem, ConversationMessage } from './types.js';
+import { asRecord, firstString, getArray, getString, type RawRecord } from './raw-types.js';
 
 export class GeminiAdapter implements SourceAdapter {
   readonly sourceType = 'gemini' as const;
   readonly displayName = 'Gemini';
 
   parse(input: unknown): UniversalImportItem[] {
+    // Handle different Gemini export formats
     if (Array.isArray(input)) {
       return this.parseConversationArray(input);
     }
 
-    const root = input as any;
+    const root = asRecord(input);
+    if (!root) return [];
 
-    if (Array.isArray(root?.conversations)) {
-      return this.parseConversationArray(root.conversations);
+    // Google Takeout format: { conversations: [...] }
+    const conversations = getArray(root, 'conversations');
+    if (conversations) {
+      return this.parseConversationArray(conversations);
     }
 
-    if (Array.isArray(root?.history)) {
+    // Gemini API history format: { history: [...] }
+    if (getArray(root, 'history')) {
       return this.parseSingleConversation(root);
     }
 
     return [];
   }
 
-  private parseConversationArray(conversations: any[]): UniversalImportItem[] {
+  private parseConversationArray(conversations: unknown[]): UniversalImportItem[] {
     const items: UniversalImportItem[] = [];
 
-    for (const conv of conversations) {
-      const title = conv.title ?? conv.name ?? 'Untitled';
+    for (const rawConv of conversations) {
+      const conv = asRecord(rawConv);
+      if (!conv) continue;
+      const title = firstString(conv, 'title', 'name') ?? 'Untitled';
       const messages: ConversationMessage[] = [];
 
-      const entries = conv.messages ?? conv.turns ?? conv.history ?? [];
-      for (const entry of entries) {
+      const entries = getArray(conv, 'messages') ?? getArray(conv, 'turns') ?? getArray(conv, 'history') ?? [];
+      for (const rawEntry of entries) {
+        const entry = asRecord(rawEntry);
+        if (!entry) continue;
         const role = this.resolveRole(entry);
         if (!role || role === 'system') continue;
 
@@ -57,7 +73,7 @@ export class GeminiAdapter implements SourceAdapter {
         messages.push({
           role,
           text,
-          timestamp: entry.createTime ?? entry.create_time ?? entry.timestamp,
+          timestamp: firstString(entry, 'createTime', 'create_time', 'timestamp'),
         });
       }
 
@@ -70,12 +86,11 @@ export class GeminiAdapter implements SourceAdapter {
         title,
         content: messages.map((m) => `${m.role}: ${m.text}`).join('\n\n'),
         messages,
-        timestamp:
-          conv.createTime ?? conv.create_time ?? conv.created_at ?? new Date().toISOString(),
+        timestamp: firstString(conv, 'createTime', 'create_time', 'created_at') ?? new Date().toISOString(),
         metadata: {
-          conversationId: conv.id ?? conv.conversationId,
+          conversationId: firstString(conv, 'id', 'conversationId'),
           messageCount: messages.length,
-          model: conv.model ?? conv.modelVersion,
+          model: firstString(conv, 'model', 'modelVersion'),
         },
       });
     }
@@ -83,11 +98,13 @@ export class GeminiAdapter implements SourceAdapter {
     return items;
   }
 
-  private parseSingleConversation(conv: any): UniversalImportItem[] {
+  private parseSingleConversation(conv: RawRecord): UniversalImportItem[] {
     const messages: ConversationMessage[] = [];
-    const entries = conv.history ?? [];
+    const entries = getArray(conv, 'history') ?? [];
 
-    for (const entry of entries) {
+    for (const rawEntry of entries) {
+      const entry = asRecord(rawEntry);
+      if (!entry) continue;
       const role = this.resolveRole(entry);
       if (!role || role === 'system') continue;
       const text = this.extractText(entry);
@@ -97,40 +114,64 @@ export class GeminiAdapter implements SourceAdapter {
 
     if (messages.length === 0) return [];
 
-    return [
-      {
-        id: randomUUID(),
-        source: 'gemini',
-        type: 'conversation',
-        title: conv.title ?? 'Gemini Conversation',
-        content: messages.map((m) => `${m.role}: ${m.text}`).join('\n\n'),
-        messages,
-        timestamp: new Date().toISOString(),
-        metadata: { model: conv.model },
-      },
-    ];
+    return [{
+      id: randomUUID(),
+      source: 'gemini',
+      type: 'conversation',
+      title: getString(conv, 'title') ?? 'Gemini Conversation',
+      content: messages.map((m) => `${m.role}: ${m.text}`).join('\n\n'),
+      messages,
+      timestamp: new Date().toISOString(),
+      metadata: { model: getString(conv, 'model') },
+    }];
   }
 
-  private resolveRole(entry: any): 'user' | 'assistant' | 'system' | null {
-    const role = entry.role ?? entry.author ?? entry.sender;
+  private resolveRole(entry: RawRecord): 'user' | 'assistant' | 'system' | null {
+    const role = firstString(entry, 'role', 'author', 'sender');
     if (!role) return null;
-    const r = String(role).toLowerCase();
+    const r = role.toLowerCase();
     if (r === 'user' || r === 'human') return 'user';
     if (r === 'model' || r === 'assistant' || r === 'gemini') return 'assistant';
     if (r === 'system') return 'system';
     return null;
   }
 
-  private extractText(entry: any): string {
-    if (Array.isArray(entry.parts)) {
-      return entry.parts
-        .filter((p: any) => typeof p.text === 'string')
-        .map((p: any) => p.text)
+  private extractText(entry: RawRecord): string {
+    // Gemini parts format: { parts: [{ text: "..." }] }
+    const parts = getArray(entry, 'parts');
+    if (parts) {
+      return parts
+        .map(asRecord)
+        .map((p) => {
+          if (!p) return undefined;
+          const t = getString(p, 'text');
+          if (t !== undefined) return t;
+          // Caption parity: media parts were silently dropped. Surface the
+          // text-bearing fields the export carries — file URI/name for
+          // fileData, mime type as a presence signal for inline images
+          // ("did X share a photo?" questions).
+          const fd = asRecord(p.fileData) ?? asRecord(p.file_data);
+          if (fd) {
+            const uri = getString(fd, 'fileUri') ?? getString(fd, 'file_uri') ?? getString(fd, 'displayName');
+            const mime = getString(fd, 'mimeType') ?? getString(fd, 'mime_type');
+            return `[Shared file: ${uri ?? mime ?? 'media'}]`;
+          }
+          const il = asRecord(p.inlineData) ?? asRecord(p.inline_data);
+          if (il) {
+            const mime = getString(il, 'mimeType') ?? getString(il, 'mime_type');
+            return mime ? `[Shared media: ${mime}]` : undefined;
+          }
+          return undefined;
+        })
+        .filter((t): t is string => typeof t === 'string')
         .join('\n')
         .trim();
     }
-    if (typeof entry.text === 'string') return entry.text.trim();
-    if (typeof entry.content === 'string') return entry.content.trim();
+    // Simple text field
+    const text = getString(entry, 'text');
+    if (text !== undefined) return text.trim();
+    const content = getString(entry, 'content');
+    if (content !== undefined) return content.trim();
     return '';
   }
 }

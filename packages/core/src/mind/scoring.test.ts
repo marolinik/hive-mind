@@ -110,6 +110,42 @@ describe('scoring', () => {
       expect(important).toBeGreaterThan(balanced);
     });
 
+    // Forward-ported from waggle-os monorepo (mono-parity 2026-06-12):
+    // temporal decay anchors on WRITE time (created_at) when provided —
+    // touch() resets last_accessed on every read, so decaying on it made the
+    // temporal dimension constant noise on historical corpora.
+    it('anchors temporal decay on created_at when provided (write time, not access time)', () => {
+      const now = new Date().toISOString();
+      const oneYearAgo = new Date(Date.now() - 365 * 86400_000).toISOString();
+      const weights = SCORING_PROFILES.recent;
+
+      // Old frame that was just touched: last_accessed is fresh but created_at
+      // is a year old. With created_at honored, the score must decay.
+      const anchoredOnWrite = computeRelevance(
+        { id: 1, created_at: oneYearAgo, last_accessed: now, access_count: 0, importance: 'normal' },
+        weights,
+      );
+      const freshFrame = computeRelevance(
+        { id: 1, created_at: now, last_accessed: now, access_count: 0, importance: 'normal' },
+        weights,
+      );
+      expect(anchoredOnWrite).toBeLessThan(freshFrame);
+    });
+
+    it('falls back to last_accessed when created_at is absent (back-compat)', () => {
+      const oneYearAgo = new Date(Date.now() - 365 * 86400_000).toISOString();
+      const weights = SCORING_PROFILES.recent;
+      const withoutCreatedAt = computeRelevance(
+        { id: 1, last_accessed: oneYearAgo, access_count: 0, importance: 'normal' },
+        weights,
+      );
+      const explicitCreatedAt = computeRelevance(
+        { id: 1, created_at: oneYearAgo, last_accessed: oneYearAgo, access_count: 0, importance: 'normal' },
+        weights,
+      );
+      expect(withoutCreatedAt).toBeCloseTo(explicitCreatedAt, 10);
+    });
+
     it('boosts graph-adjacent frames under the `connected` profile', () => {
       // All profile weights sum to 1.0, so when every feature contributes the
       // same value the profiles are indistinguishable. The connected profile

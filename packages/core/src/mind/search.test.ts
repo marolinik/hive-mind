@@ -4,7 +4,13 @@ import { join } from 'node:path';
 import { rmSync, existsSync } from 'node:fs';
 import { MindDB, EmbeddingDimMismatchError } from './db.js';
 import { FrameStore } from './frames.js';
-import { HybridSearch, assessRetrievalConfidence, type SearchResult } from './search.js';
+import {
+  HybridSearch,
+  assessRetrievalConfidence,
+  chunkRetrievalEnabled,
+  rechunkAllFrames,
+  type SearchResult,
+} from './search.js';
 import { createEmbeddingProvider, type EmbeddingProviderInstance } from './embedding-provider.js';
 import type { Embedder } from './embeddings.js';
 
@@ -164,6 +170,182 @@ describe('HybridSearch', () => {
     const topIds = results.map((r) => r.frame.id);
     expect(topIds).toContain(a.id);
     expect(topIds).toContain(b.id);
+  });
+
+  // ── Forward-ported from waggle-os monorepo (mono-parity 2026-06-12) ──────
+
+  describe('since/until date-window fixes', () => {
+    function setCreatedAt(frameId: number, createdAt: string): void {
+      db.getDatabase()
+        .prepare('UPDATE memory_frames SET created_at = ? WHERE id = ?')
+        .run(createdAt, frameId);
+    }
+
+    it('fencepost: date-only until includes an ISO timestamp later on the until day', async () => {
+      const f = frames.createIFrame('gop-a', 'quarterly metrics review for the launch');
+      setCreatedAt(f.id, '2026-03-21T10:00:00.000Z'); // same day, after midnight
+
+      const hits = await search.search('quarterly metrics review', {
+        limit: 5,
+        until: '2026-03-21',
+      });
+      expect(hits.map((h) => h.frame.id)).toContain(f.id);
+    });
+
+    it('fencepost: date-only until includes a space-separated timestamp on the until day', async () => {
+      const f = frames.createIFrame('gop-a', 'quarterly metrics review for the launch');
+      setCreatedAt(f.id, '2026-03-21 14:30:00'); // datetime('now') format
+
+      const hits = await search.search('quarterly metrics review', {
+        limit: 5,
+        until: '2026-03-21',
+      });
+      expect(hits.map((h) => h.frame.id)).toContain(f.id);
+    });
+
+    it('fencepost: still excludes frames after the until day', async () => {
+      const f = frames.createIFrame('gop-a', 'quarterly metrics review for the launch');
+      setCreatedAt(f.id, '2026-03-22T00:30:00.000Z');
+
+      const hits = await search.search('quarterly metrics review', {
+        limit: 5,
+        until: '2026-03-21',
+      });
+      expect(hits.map((h) => h.frame.id)).not.toContain(f.id);
+    });
+
+    it('fencepost: date-only since includes frames from midnight of that day', async () => {
+      const f = frames.createIFrame('gop-a', 'quarterly metrics review for the launch');
+      setCreatedAt(f.id, '2026-03-21T00:30:00.000Z');
+
+      const hits = await search.search('quarterly metrics review', {
+        limit: 5,
+        since: '2026-03-21',
+      });
+      expect(hits.map((h) => h.frame.id)).toContain(f.id);
+    });
+
+    it('slot consumption: windowed search reaches past out-of-window candidates', async () => {
+      // 30 out-of-window frames that rank HIGHER on the keyword lane (denser
+      // keyword repetition) — pre-fix these filled the limit*2 lane slots and
+      // the post-filter left nothing.
+      for (let i = 0; i < 30; i++) {
+        const f = frames.createIFrame('gop-a', `alpha rollout alpha checklist item ${i} alpha`);
+        setCreatedAt(f.id, '2026-06-01T08:00:00.000Z');
+      }
+      // 3 in-window frames, weaker keyword density.
+      const inWindow: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const f = frames.createIFrame('gop-a', `alpha planning note ${i} from spring`);
+        setCreatedAt(f.id, `2025-05-1${i}T09:00:00.000Z`);
+        inWindow.push(f.id);
+      }
+
+      const hits = await search.search('alpha', {
+        limit: 5,
+        since: '2025-05-01',
+        until: '2025-05-31',
+      });
+      const ids = hits.map((h) => h.frame.id);
+      for (const id of inWindow) expect(ids).toContain(id);
+    });
+  });
+
+  describe('LIKE keyword fallback on FTS5 parse errors', () => {
+    it('keywordSearch degrades to a LIKE scan instead of returning empty', async () => {
+      const f = frames.createIFrame('gop-a', 'roadmap for the Q2 launch milestones');
+      // A query containing a quote is passed to FTS5 raw (caller-quoted
+      // convention); the unbalanced quote makes FTS5 throw a parse error.
+      const ids = await search.keywordSearch('launch "milestones', 10);
+      expect(ids).toContain(f.id);
+    });
+
+    it('LIKE fallback honours gopId scoping', async () => {
+      const inA = frames.createIFrame('gop-a', 'incident postmortem draft alpha');
+      const inB = frames.createIFrame('gop-b', 'incident postmortem draft bravo');
+      const scoped = await search.keywordSearch('postmortem "draft', 10, 'gop-a');
+      expect(scoped).toContain(inA.id);
+      expect(scoped).not.toContain(inB.id);
+    });
+
+    it('returns [] when nothing matches even via the fallback', async () => {
+      frames.createIFrame('gop-a', 'completely unrelated content');
+      const ids = await search.keywordSearch('zzznothing "qqq', 10);
+      expect(ids).toEqual([]);
+    });
+  });
+
+  describe('chunk-retrieval flag (HIVE_MIND_CHUNK_RETRIEVAL) + auto-chunk-indexing', () => {
+    const ENV_KEY = 'HIVE_MIND_CHUNK_RETRIEVAL';
+    let savedEnv: string | undefined;
+
+    beforeEach(() => {
+      savedEnv = process.env[ENV_KEY];
+    });
+
+    afterEach(() => {
+      if (savedEnv === undefined) delete process.env[ENV_KEY];
+      else process.env[ENV_KEY] = savedEnv;
+    });
+
+    it('is ON by default and OFF only with the =0 kill switch', () => {
+      delete process.env[ENV_KEY];
+      expect(chunkRetrievalEnabled()).toBe(true);
+      process.env[ENV_KEY] = '1';
+      expect(chunkRetrievalEnabled()).toBe(true);
+      process.env[ENV_KEY] = '0';
+      expect(chunkRetrievalEnabled()).toBe(false);
+    });
+
+    it('indexFrame chunk-indexes the frame by default (write side in lockstep)', async () => {
+      delete process.env[ENV_KEY];
+      const f = frames.createIFrame('gop-a', 'auto chunk indexing on live write');
+      await search.indexFrame(f.id, f.content);
+      const n = (db.getDatabase()
+        .prepare('SELECT COUNT(*) AS n FROM memory_frame_chunks WHERE frame_id = ?')
+        .get(f.id) as { n: number }).n;
+      expect(n).toBeGreaterThan(0);
+    });
+
+    it('indexFrame skips chunk indexing when the kill switch is set', async () => {
+      process.env[ENV_KEY] = '0';
+      const f = frames.createIFrame('gop-a', 'no chunks under the kill switch');
+      await search.indexFrame(f.id, f.content);
+      const n = (db.getDatabase()
+        .prepare('SELECT COUNT(*) AS n FROM memory_frame_chunks')
+        .get() as { n: number }).n;
+      expect(n).toBe(0);
+    });
+
+    it('indexFramesBatch chunk-indexes every frame in the batch by default', async () => {
+      delete process.env[ENV_KEY];
+      const a = frames.createIFrame('gop-a', 'batch chunk frame alpha');
+      const b = frames.createIFrame('gop-a', 'batch chunk frame bravo');
+      await search.indexFramesBatch([
+        { id: a.id, content: a.content },
+        { id: b.id, content: b.content },
+      ]);
+      const distinct = (db.getDatabase()
+        .prepare('SELECT COUNT(DISTINCT frame_id) AS n FROM memory_frame_chunks')
+        .get() as { n: number }).n;
+      expect(distinct).toBe(2);
+    });
+
+    it('rechunkAllFrames backfills chunks for every non-deprecated frame regardless of the flag', async () => {
+      process.env[ENV_KEY] = '0'; // backfill must run even with the lane off
+      frames.createIFrame('gop-a', 'rechunk target one');
+      frames.createIFrame('gop-a', 'rechunk target two');
+      frames.createIFrame('gop-a', 'rechunk skipped frame', 'deprecated');
+
+      const result = await rechunkAllFrames(db, search);
+      expect(result.framesProcessed).toBe(2);
+      expect(result.framesFailed).toBe(0);
+      expect(result.chunksCreated).toBeGreaterThanOrEqual(2);
+      const distinct = (db.getDatabase()
+        .prepare('SELECT COUNT(DISTINCT frame_id) AS n FROM memory_frame_chunks')
+        .get() as { n: number }).n;
+      expect(distinct).toBe(2);
+    });
   });
 
   it('search() honours gopId scoping end-to-end', async () => {

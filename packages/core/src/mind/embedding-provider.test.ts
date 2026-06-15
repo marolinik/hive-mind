@@ -90,12 +90,15 @@ describe('embedding guards (oversized-frame truncation + skip-not-abort)', () =>
     expect(capEmbedText('x'.repeat(20000), 6000)).toHaveLength(6000); // over limit: clamped
   });
 
-  it('maxEmbedCharsForModel returns 24000 for 8k models and 6000 otherwise', () => {
+  // Forward-ported from waggle-os monorepo (mono-parity 2026-06-12): the *-8k
+  // branch was reduced 24000 → 8000 — '-8k' names can be architecture-capped
+  // at 2048 tokens (nomic-bert), and a 24K-char cap mock-poisoned long frames.
+  it('maxEmbedCharsForModel returns 8000 for 8k models and 6000 otherwise', () => {
     expect(maxEmbedCharsForModel('nomic-embed-text')).toBe(6000);
     expect(maxEmbedCharsForModel('voyage-3-lite')).toBe(6000);
     expect(maxEmbedCharsForModel('deterministic-mock')).toBe(6000);
-    expect(maxEmbedCharsForModel('nomic-embed-text-8k')).toBe(24000);
-    expect(maxEmbedCharsForModel('custom (num_ctx 8192)')).toBe(24000);
+    expect(maxEmbedCharsForModel('nomic-embed-text-8k')).toBe(8000);
+    expect(maxEmbedCharsForModel('custom (num_ctx 8192)')).toBe(8000);
   });
 
   it('reembedPerText degrades ONLY the failing text, not the whole batch', async () => {

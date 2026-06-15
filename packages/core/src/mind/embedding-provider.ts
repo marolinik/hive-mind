@@ -83,13 +83,22 @@ function createMockEmbedder(dims: number): Embedder {
 
 /**
  * Per-input character cap for embedding. `nomic-embed-text` has a 2048-token
- * (~6K char dense English) default context; the `*-8k` variants (or any model
- * with `num_ctx 8192`) raise it to ~24K chars. Embedding an input longer than
+ * (~6K char dense English) default context. Embedding an input longer than
  * the backend's context makes the backend reject the request, so we cap here.
  * Kept identical to the CLI re-embed path so the two never drift.
+ *
+ * Probe finding 2026-06-12 (forward-ported from waggle-os monorepo,
+ * mono-parity 2026-06-12): model NAMES lie about context. A custom
+ * `nomic-embed-text-8k` (num_ctx 8192) still 400s at its nomic-bert
+ * ARCHITECTURE limit of 2048 tokens — the previous 24K-char branch for `*-8k`
+ * names sent every long frame down the mock-fallback path. The `-8k` branch
+ * is therefore capped at 8K chars (≈2048 prose tokens): safe for the
+ * architecture-limited reality, merely conservative for a genuine 8192-token
+ * embedder. reembedPerText remains the backstop for token-dense content that
+ * still exceeds the backend's real window.
  */
 export function maxEmbedCharsForModel(modelName: string): number {
-  return /(-|_|\.)8k\b|num_ctx[^0-9]*8192/i.test(modelName) ? 24_000 : 6_000;
+  return /(-|_|\.)8k\b|num_ctx[^0-9]*8192/i.test(modelName) ? 8_000 : 6_000;
 }
 
 /** Clamp a single input to `maxChars` (no-op when already under the cap). */

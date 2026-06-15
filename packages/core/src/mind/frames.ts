@@ -17,7 +17,12 @@
  */
 
 import type { MindDB } from './db.js';
-import { hashFrameContent } from './content-hash.js';
+import { hashFrameContent, stripHmPrefix } from './content-hash.js';
+
+// Re-export — stripHmPrefix lives in content-hash.ts so the hash and the strip
+// stay in one module; existing importers keep working unchanged.
+// Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+export { stripHmPrefix };
 
 /** Strict ISO-8601 check used by `createIFrame` to decide whether to honor
  *  a caller-supplied `createdAt`. Requires the `T` separator and a
@@ -222,14 +227,19 @@ export class FrameStore {
     return { iframe, pframes };
   }
 
-  touch(id: number): void {
-    this.db
+  /** Bump access_count + last_accessed. Returns the new access_count, or
+   *  undefined when the id is unknown.
+   *  Forward-ported from waggle-os monorepo (mono-parity 2026-06-12). */
+  touch(id: number): number | undefined {
+    const row = this.db
       .getDatabase()
       .prepare(
         `UPDATE memory_frames SET access_count = access_count + 1, last_accessed = datetime('now')
-         WHERE id = ?`,
+         WHERE id = ?
+         RETURNING access_count AS accessCount`,
       )
-      .run(id);
+      .get(id) as { accessCount: number } | undefined;
+    return row?.accessCount;
   }
 
   getImportanceMultiplier(importance: Importance): number {
@@ -293,10 +303,15 @@ export class FrameStore {
    * Returns the existing frame if content hash matches, null otherwise.
    * If a duplicate is found, updates its access_count instead of creating a new frame.
    *
-   * Comparison is trim-stable — matches on the SHA-256 of `content.trim()`
-   * (JS trim strips all Unicode whitespace) via the indexed `content_hash`
-   * column. `ORDER BY id DESC LIMIT 1` preserves the legacy "most-recent match
-   * wins" semantics; the lookup is global (no gop_id scope), matching the prior
+   * Comparison matches on the indexed `content_hash` column (hashFrameContent):
+   *  - trim-stable: JS `trim()` over the content (SQLite's `trim()` only
+   *    strips ASCII space, so hashing happens JS-side, never in SQL);
+   *  - provenance-insensitive: content passes through `stripHmPrefix` before
+   *    hashing, so two same-body captures of one turn collapse into one frame
+   *    regardless of which source's `[hm …]` prefix they carry.
+   *    (Forward-ported from waggle-os monorepo, mono-parity 2026-06-12.)
+   * `ORDER BY id DESC LIMIT 1` preserves the legacy "most-recent match wins"
+   * semantics; the lookup is global (no gop_id scope), matching the prior
    * unbounded-scan behavior but without the 500-row recency cap.
    */
   findDuplicate(content: string): MemoryFrame | null {
@@ -360,6 +375,27 @@ export class FrameStore {
     }
     const result = raw.prepare('DELETE FROM memory_frames WHERE id = ?').run(id);
     return result.changes > 0;
+  }
+
+  /**
+   * Delete every frame whose content starts with `prefix` (exact literal
+   * match — LIKE metacharacters in the prefix are escaped). Used by
+   * replace-on-update lanes (e.g. a profile card supersedes the prior card
+   * for the same subject). Routes through delete(id) so FTS/vec/KG cleanup
+   * applies. Returns the number of frames deleted.
+   * Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+   */
+  deleteByContentPrefix(prefix: string): number {
+    const raw = this.db.getDatabase();
+    const escaped = prefix.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+    const rows = raw
+      .prepare(`SELECT id FROM memory_frames WHERE content LIKE ? ESCAPE '\\'`)
+      .all(`${escaped}%`) as Array<{ id: number }>;
+    let deleted = 0;
+    for (const r of rows) {
+      if (this.delete(r.id)) deleted++;
+    }
+    return deleted;
   }
 
   // ── Memory Compaction ──────────────────────────────────────────────────

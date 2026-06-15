@@ -129,8 +129,13 @@ export { ConceptTracker, CONCEPT_MASTERY_TABLE_SQL } from './mind/concept-tracke
 export type { ConceptEntry, ConceptUpdate } from './mind/concept-tracker.js';
 
 // Hybrid search + scoring
-export { HybridSearch, assessRetrievalConfidence } from './mind/search.js';
-export type { SearchOptions, SearchResult, RetrievalConfidence } from './mind/search.js';
+export {
+  HybridSearch,
+  assessRetrievalConfidence,
+  chunkRetrievalEnabled,
+  rechunkAllFrames,
+} from './mind/search.js';
+export type { SearchOptions, SearchResult, RetrievalConfidence, RechunkResult } from './mind/search.js';
 export { chunkText } from './mind/chunker.js';
 export type { FrameChunk, ChunkOptions } from './mind/chunker.js';
 export { createInProcessReranker } from './mind/inprocess-reranker.js';
@@ -178,3 +183,21 @@ export type { LiteLLMEmbedderConfig } from './mind/litellm-embedder.js';
 // Logger
 export { createCoreLogger } from './logger.js';
 export type { CoreLogger } from './logger.js';
+
+// Temporal recall lanes — forward-ported from waggle-os monorepo
+// (mono-parity 2026-06-12): write-time relative-date anchoring, query-side
+// explicit-period windowing, temporal rendering helpers, and the RAWDETAIL
+// escalation lane over verbatim dialogue turns.
+export {
+  TEMPORAL_GUIDANCE,
+  toDatePrefix,
+  renderDatedSnippet,
+  referenceDate,
+  renderReferenceDateLine,
+} from './mind/recall-context.js';
+export { resolveRelativeDate } from './mind/resolve-relative-date.js';
+export type { ResolvedDate } from './mind/resolve-relative-date.js';
+export { parseDateWindow } from './mind/parse-date-window.js';
+export type { DateWindow } from './mind/parse-date-window.js';
+export { fetchRawDetailLane, rawTurnBody, RAW_DETAIL_K } from './mind/raw-detail-lane.js';
+export type { RawTurnHit, RawDetailLaneOptions } from './mind/raw-detail-lane.js';

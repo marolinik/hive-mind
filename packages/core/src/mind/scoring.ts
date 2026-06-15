@@ -90,6 +90,7 @@ export function computeImportanceScore(importance: Importance): number {
 export function computeRelevance(
   frame: {
     id: number;
+    created_at?: string;
     last_accessed: string;
     access_count: number;
     importance: Importance;
@@ -97,7 +98,13 @@ export function computeRelevance(
   weights: ScoringWeights,
   context: ScoringContext = {},
 ): number {
-  const temporal = computeTemporalScore(frame.last_accessed);
+  // Forward-ported from waggle-os monorepo (mono-parity 2026-06-12), W4.2:
+  // the temporal dimension decays on WRITE time (created_at), not access
+  // time. last_accessed is bumped to "now" by touch() on every read —
+  // decaying on it made this dimension constant noise on historical corpora
+  // (every recalled frame scored "recent"). created_at is optional for
+  // back-compat; callers not passing it keep the old access-decay behavior.
+  const temporal = computeTemporalScore(frame.created_at ?? frame.last_accessed);
   const popularity = computePopularityScore(frame.access_count);
   const contextual = computeContextualScore(frame.id, context.graphDistances);
   const importance = computeImportanceScore(frame.importance);

@@ -27,6 +27,24 @@ function contentHash(text: string): string {
   return createHash('sha256').update(normalize(text)).digest('hex').slice(0, 16);
 }
 
+/**
+ * A stable digest of an entire harvest item set, used to skip the O(n·500)
+ * per-item rescan when a source's content is unchanged since the last sync.
+ * Order-independent (items are hashed then sorted) so adapter ordering
+ * jitter does not defeat the skip. Each item contributes id + title + content
+ * so a same-id edit still changes the digest.
+ *
+ * Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+ */
+export function harvestSetHash(
+  items: ReadonlyArray<{ id?: string; title?: string; content?: string }>,
+): string {
+  const perItem = items
+    .map((it) => contentHash(`${it.id ?? ''} ${it.title ?? ''} ${it.content ?? ''}`))
+    .sort();
+  return createHash('sha256').update(perItem.join('')).digest('hex').slice(0, 32);
+}
+
 /** Simple cosine-style similarity on character trigrams. */
 function trigramSimilarity(a: string, b: string): number {
   const trigramsA = new Set<string>();
