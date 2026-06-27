@@ -235,6 +235,10 @@ export class MindDB {
     // lookups for `[hm …]`-prefixed content, so recompute every row once.
     // Idempotence: guarded by the meta flag 'content_hash_semantics'.
     this.rehashContentHashes();
+
+    // One-time backfill of the kg_entity_frames bridge over pre-existing frames
+    // so the 'contextual' scoring signal works retroactively. Sentinel-guarded.
+    this.backfillKgEntityFrames();
   }
 
   /** Recompute content_hash for ALL rows under the current hashFrameContent
@@ -252,6 +256,35 @@ export class MindDB {
       this.setMeta('content_hash_semantics', 'hm-stripped');
     });
     tx(rows);
+  }
+
+  /** One-time backfill of the kg_entity_frames bridge so the 'contextual' scoring
+   *  signal works over frames written before the bridge existed. Offline (string
+   *  match, no LLM): an entity links to a frame whose content mentions its name.
+   *  Idempotent (INSERT OR IGNORE) and guarded by a meta sentinel unless `force`.
+   *  Returns the number of new (entity, frame) links created. */
+  backfillKgEntityFrames(force = false): number {
+    if (!force && this.getMeta('kg_bridge_backfilled') === '1') return 0;
+    const frames = this.db
+      .prepare('SELECT id, content FROM memory_frames')
+      .all() as { id: number; content: string }[];
+    const entsInFrame = this.db.prepare(
+      "SELECT id FROM knowledge_entities WHERE valid_to IS NULL AND length(name) >= 3 AND instr(lower(?), lower(name)) > 0 LIMIT 64",
+    );
+    const link = this.db.prepare(
+      'INSERT OR IGNORE INTO kg_entity_frames (entity_id, frame_id) VALUES (?, ?)',
+    );
+    let created = 0;
+    const tx = this.db.transaction(() => {
+      for (const f of frames) {
+        for (const e of entsInFrame.all(f.content) as { id: number }[]) {
+          created += link.run(e.id, f.id).changes;
+        }
+      }
+      this.setMeta('kg_bridge_backfilled', '1');
+    });
+    tx();
+    return created;
   }
 
   /** Add a column to a table only if it isn't already present (idempotent migration). */

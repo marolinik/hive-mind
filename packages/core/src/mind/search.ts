@@ -24,6 +24,7 @@ import {
   type ScoringProfile,
   type ScoringContext,
 } from './scoring.js';
+import { KnowledgeGraph } from './knowledge.js';
 
 export interface SearchOptions {
   limit?: number;
@@ -238,6 +239,23 @@ export class HybridSearch {
 
     const frameMap = new Map(frames.map((f) => [f.id, f]));
 
+    // Turn on the 'contextual' scoring signal: seed graph distance from entities
+    // the caller flagged (context.recentEntityIds) plus entities named in the
+    // query, BFS the KG, and map to frames via the kg_entity_frames bridge.
+    // Best-effort: a graph hiccup must never fail the search.
+    let scoringContext = context;
+    if (!scoringContext.graphDistances) {
+      try {
+        const kg = new KnowledgeGraph(this.db);
+        const seeds = new Set<number>(scoringContext.recentEntityIds ?? []);
+        for (const id of kg.findEntitiesInText(query)) seeds.add(id);
+        if (seeds.size > 0) {
+          const graphDistances = kg.frameDistancesFromEntities([...seeds], 3);
+          if (graphDistances.size > 0) scoringContext = { ...scoringContext, graphDistances };
+        }
+      } catch { /* contextual signal is optional */ }
+    }
+
     const results: SearchResult[] = [];
     for (const [frameId, rrfScore] of rrfScores) {
       const frame = frameMap.get(frameId);
@@ -254,7 +272,7 @@ export class HybridSearch {
           importance: frame.importance as Importance,
         },
         weights,
-        context,
+        scoringContext,
       );
 
       results.push({
