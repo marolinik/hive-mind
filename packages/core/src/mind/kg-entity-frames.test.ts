@@ -57,6 +57,18 @@ describe('KG entity↔frame bridge (contextual scoring signal)', () => {
     expect(kg.frameDistancesFromEntities([acme.id], 3).get(f1.id)).toBe(0);
   });
 
+  it('backfill skips ubiquitous hub entities (>40% of frames)', () => {
+    // 30 frames mention "Hubword", 1 mentions "Rareword". cap = max(20, 12) = 20.
+    for (let i = 0; i < 30; i++) frames.createIFrame(gop, `note ${i} about Hubword`);
+    const rareFrame = frames.createIFrame(gop, 'a single mention of Rareword');
+    const hub = kg.createEntity('concept', 'Hubword', {});
+    const rare = kg.createEntity('concept', 'Rareword', {});
+
+    db.backfillKgEntityFrames(true);
+    expect(kg.frameDistancesFromEntities([hub.id], 3).size).toBe(0); // hub skipped
+    expect(kg.frameDistancesFromEntities([rare.id], 3).get(rareFrame.id)).toBe(0);
+  });
+
   it('ON DELETE CASCADE removes bridge rows when a frame is deleted', () => {
     const f = frames.createIFrame(gop, 'y');
     const e = kg.createEntity('org', 'Acme', {});
