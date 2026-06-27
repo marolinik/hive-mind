@@ -121,6 +121,17 @@ CREATE TABLE IF NOT EXISTS knowledge_relations (
 CREATE INDEX IF NOT EXISTS idx_relations_source ON knowledge_relations (source_id, relation_type);
 CREATE INDEX IF NOT EXISTS idx_relations_target ON knowledge_relations (target_id, relation_type);
 
+-- Knowledge Graph - Entity↔Frame bridge: which frames an entity was extracted
+-- from, so the 'contextual' scoring signal can map query-seeded graph distances
+-- back onto frames. ON DELETE CASCADE keeps it consistent with frame/entity removal.
+CREATE TABLE IF NOT EXISTS kg_entity_frames (
+  entity_id INTEGER NOT NULL REFERENCES knowledge_entities(id) ON DELETE CASCADE,
+  frame_id INTEGER NOT NULL REFERENCES memory_frames(id) ON DELETE CASCADE,
+  PRIMARY KEY (entity_id, frame_id)
+);
+CREATE INDEX IF NOT EXISTS idx_kg_entity_frames_frame ON kg_entity_frames (frame_id);
+CREATE INDEX IF NOT EXISTS idx_kg_entity_frames_entity ON kg_entity_frames (entity_id);
+
 -- Harvest Sources: track memory-harvest sync state per source
 CREATE TABLE IF NOT EXISTS harvest_sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

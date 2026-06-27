@@ -276,10 +276,12 @@ async function runCognifyOnMind(
         kg.updateEntity(existing.id, {
           properties: { ...existingProps, seen_count: seenCount },
         });
+        kg.linkEntityToFrame(existing.id, frame.id);
         entitiesUpdated++;
       } else {
         try {
-          kg.createEntity(cand.type, cand.name, { seen_count: 1, source: sourceTag });
+          const created = kg.createEntity(cand.type, cand.name, { seen_count: 1, source: sourceTag });
+          kg.linkEntityToFrame(created.id, frame.id);
           entitiesCreated++;
         } catch { /* validation may reject — skip */ }
       }

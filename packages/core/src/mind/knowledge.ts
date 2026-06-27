@@ -420,6 +420,55 @@ export class KnowledgeGraph {
     return distances;
   }
 
+  /** Link an entity to a frame it was extracted from (kg_entity_frames bridge).
+   *  Powers the 'contextual' scoring signal. Idempotent per (entity, frame). */
+  linkEntityToFrame(entityId: number, frameId: number): void {
+    try {
+      this.db.getDatabase().prepare(
+        'INSERT OR IGNORE INTO kg_entity_frames (entity_id, frame_id) VALUES (?, ?)',
+      ).run(entityId, frameId);
+    } catch { /* bridge table absent on a pre-migration DB — best-effort */ }
+  }
+
+  /** Seed entities whose name appears in free text (case-insensitive, name ≥3
+   *  chars), longest-name-first. Used to seed contextual scoring from a query. */
+  findEntitiesInText(text: string, limit = 12): number[] {
+    try {
+      const rows = this.db.getDatabase().prepare(
+        "SELECT id FROM knowledge_entities WHERE valid_to IS NULL AND length(name) >= 3 AND instr(lower(?), lower(name)) > 0 ORDER BY length(name) DESC LIMIT ?",
+      ).all(text, limit) as Array<{ id: number }>;
+      return rows.map((r) => r.id);
+    } catch { return []; }
+  }
+
+  /** BFS from seed entities (≤maxDepth) and map the reached entities to the
+   *  frames they were extracted from via the kg_entity_frames bridge, returning
+   *  frameId → shortest graph distance. Empty when the bridge is unpopulated. */
+  frameDistancesFromEntities(seedEntityIds: number[], maxDepth = 3): Map<number, number> {
+    const frameDist = new Map<number, number>();
+    if (seedEntityIds.length === 0) return frameDist;
+    const entityDist = new Map<number, number>();
+    for (const seed of seedEntityIds) {
+      entityDist.set(seed, 0); // the seed entity itself is distance 0
+      for (const [eid, d] of this.bfsDistances(seed, maxDepth)) {
+        const prev = entityDist.get(eid);
+        if (prev === undefined || d < prev) entityDist.set(eid, d);
+      }
+    }
+    try {
+      const stmt = this.db.getDatabase().prepare(
+        'SELECT frame_id FROM kg_entity_frames WHERE entity_id = ?',
+      );
+      for (const [eid, d] of entityDist) {
+        for (const { frame_id } of stmt.all(eid) as Array<{ frame_id: number }>) {
+          const prev = frameDist.get(frame_id);
+          if (prev === undefined || d < prev) frameDist.set(frame_id, d);
+        }
+      }
+    } catch { return new Map(); } // bridge absent — no contextual signal
+    return frameDist;
+  }
+
   // ── Validation ───────────────────────────────────────────────────────
 
   private validateEntityProperties(
