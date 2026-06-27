@@ -268,17 +268,31 @@ export class MindDB {
     const frames = this.db
       .prepare('SELECT id, content FROM memory_frames')
       .all() as { id: number; content: string }[];
-    const entsInFrame = this.db.prepare(
-      "SELECT id FROM knowledge_entities WHERE valid_to IS NULL AND length(name) >= 3 AND instr(lower(?), lower(name)) > 0 LIMIT 64",
+    // Ubiquity cap: an entity mentioned in nearly every frame (e.g. "Claude" in a
+    // claude-code export) is a hub that carries no locational signal — skip it.
+    // Cap at 40% of frames, floored at 20 so small corpora aren't over-filtered.
+    const cap = Math.max(20, Math.floor(frames.length * 0.4));
+    const ents = this.db
+      .prepare("SELECT id, lower(name) AS lname FROM knowledge_entities WHERE valid_to IS NULL AND length(name) >= 3")
+      .all() as { id: number; lname: string }[];
+    const countStmt = this.db.prepare(
+      'SELECT COUNT(*) AS c FROM memory_frames WHERE instr(lower(content), ?) > 0',
     );
+    const keep = ents.filter((e) => {
+      const c = (countStmt.get(e.lname) as { c: number }).c;
+      return c > 0 && c <= cap;
+    });
     const link = this.db.prepare(
       'INSERT OR IGNORE INTO kg_entity_frames (entity_id, frame_id) VALUES (?, ?)',
     );
     let created = 0;
     const tx = this.db.transaction(() => {
+      // On a forced re-run, rebuild from scratch so hub/merged entities don't linger.
+      if (force) this.db.prepare('DELETE FROM kg_entity_frames').run();
       for (const f of frames) {
-        for (const e of entsInFrame.all(f.content) as { id: number }[]) {
-          created += link.run(e.id, f.id).changes;
+        const lc = f.content.toLowerCase();
+        for (const e of keep) {
+          if (lc.includes(e.lname)) created += link.run(e.id, f.id).changes;
         }
       }
       this.setMeta('kg_bridge_backfilled', '1');
