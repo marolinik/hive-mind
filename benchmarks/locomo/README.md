@@ -6,6 +6,13 @@
 
 See [`RESULTS.md`](./RESULTS.md) for the full headline numbers, per-category breakdown, statistical caveats, and cost actuals.
 
+> **Prerequisite for any LIVE re-run (not the offline rescore below):** Ollama
+> serving `nomic-embed-text` on `http://localhost:11434` — install
+> [Ollama](https://ollama.com), then `ollama pull nomic-embed-text`. The stored
+> vectors are **1024-d nomic**; running against a DB built with a different
+> embedder silently corrupts retrieval. Plus the relevant API keys (see
+> `.env.example` at the repo root). The offline rescore needs neither.
+
 ### Reproduce offline (no API keys, no cost)
 
 The trio-strict result is committed as a regression baseline. Re-derive it from the
