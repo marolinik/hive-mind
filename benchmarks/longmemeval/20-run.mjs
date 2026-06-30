@@ -110,7 +110,7 @@ async function main() {
 
   let reranker = null;
   if (RERANK) {
-    reranker = createInProcessReranker();
+    reranker = await createInProcessReranker();
     // warm the ONNX model so the first instance isn't penalized
     try { await reranker.scoreBatch('warmup', ['warmup doc']); } catch { /* lazy load may differ */ }
   }

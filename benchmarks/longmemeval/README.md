@@ -77,7 +77,8 @@ node 40-report.mjs --judged data/judgments/judged-answers-sample-100-gpt-4o-by-g
 |---|---|
 | `00-build-canonical.mjs` | Raw HF JSON -> canonical JSONL + meta (SHA-256 dataset_version; matches the published build `a8a99545...`) |
 | `10-build-sample.mjs` | Deterministic stratified sample with per-turn structure |
-| `20-run.mjs` | Ephemeral-mind ingest + HybridSearch retrieval + comparable-model answer |
+| `20-run.mjs` | Base cell: ephemeral-mind ingest + HybridSearch retrieval + comparable-model answer |
+| `22-run-lanes.mjs` | Lanes cell (Phase 1b-i): raw-turn ingest with session dates + cross-encoder rerank + raw-detail escalation lane + date-window lane + W1 answer policy |
 | `30-judge.mjs` | LLM-as-judge (CORRECT/WRONG) + deterministic abstention scoring |
 | `40-report.mjs` | Overall + per-question-type accuracy |
 

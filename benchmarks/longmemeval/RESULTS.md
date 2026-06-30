@@ -14,13 +14,20 @@
 
 ## Measured (this harness)
 
-| Run | N | Answerer | Overall | Notes |
-|---|---:|---|---:|---|
-| Smoke | 5 | GPT-4o | 60.0% | end-to-end validation (knowledge-update 2/2, single-session-user 1/1, multi-session 0/2) |
-| Pilot | 100 | GPT-4o | _pending_ | stratified; running |
-| Full | 500 | GPT-4o | _pending_ | next |
+Two substrate configurations, same instances:
+- **base** = `HybridSearch` (RRF k=60 + 4-profile scoring) — `20-run.mjs`
+- **lanes** = base + cross-encoder rerank + raw-detail escalation lane + date-window lane + W1 answer policy (Phase 1b-i) — `22-run-lanes.mjs`
 
-Per-question-type breakdown is filled by `40-report.mjs` on completion.
+| Config | N | Answerer | Overall | Notes |
+|---|---:|---|---:|---|
+| base | 5 | GPT-4o | 60.0% | smoke; multi-session 0/2 |
+| **lanes** | 5 | GPT-4o | **80.0%** | same 5; multi-session 1/2; raw-detail lane firing (5-13 hits/q) |
+| lanes | 500 | GPT-4o | _running_ | full set, background; reportable number |
+
+The base-vs-lanes delta on the smoke (+20pp, N=5) is **directional only** — the full
+N=500 lanes run is the reportable number, updated here on completion with the
+per-question-type breakdown from `40-report.mjs`. Phase 1b-ii (write-time
+distillation lanes: profile cards, episodic timeline, dated facts) is not yet ported.
 
 ## Where this sits vs the field (external, June 2026)
 
