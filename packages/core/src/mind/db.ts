@@ -213,6 +213,9 @@ export class MindDB {
     this.ensureColumn('memory_frames', 'source', "TEXT NOT NULL DEFAULT 'user_stated'");
     // Dedup: `content_hash` backs the indexed dedup lookup (replaces the last-500 scan).
     this.ensureColumn('memory_frames', 'content_hash', 'TEXT');
+    // Per-frame metadata JSON blob (provenance/classification; backs raw_archive
+    // linking via metadata.archiveUids). Idempotent additive column.
+    this.ensureColumn('memory_frames', 'metadata', "TEXT NOT NULL DEFAULT '{}'");
 
     // SCHEMA_SQL uses CREATE TABLE/INDEX IF NOT EXISTS throughout, so re-running
     // it against an existing database is safe and idempotent — it only creates

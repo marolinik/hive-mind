@@ -48,6 +48,7 @@ describe('MindDB', () => {
       'knowledge_entities',
       'knowledge_relations',
       'harvest_sources',
+      'raw_archive',
     ]) {
       expect(names.has(expected), `expected table ${expected}`).toBe(true);
     }

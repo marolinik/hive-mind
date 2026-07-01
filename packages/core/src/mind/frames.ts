@@ -60,6 +60,10 @@ export interface MemoryFrame {
   access_count: number;
   created_at: string;
   last_accessed: string;
+  /** JSON blob for per-frame provenance/classification metadata. Always present
+   *  at the column level (NOT NULL DEFAULT '{}'); typed optional so pre-migration
+   *  callers and literal constructions stay back-compatible. */
+  metadata?: string;
 }
 
 export interface ReconstructedState {
@@ -353,6 +357,20 @@ export class FrameStore {
       /* vec table may not exist */
     }
 
+    return this.getById(id);
+  }
+
+  /**
+   * Replace a frame's `metadata` JSON blob (provenance/classification metadata).
+   * Low-level writer — the caller passes a fully-formed JSON string; parse/merge
+   * semantics live in the caller. Does NOT touch FTS/vector indexes (metadata is
+   * not full-text searchable). Returns the updated frame, or undefined if the id
+   * is unknown.
+   */
+  setMetadata(id: number, metadata: string): MemoryFrame | undefined {
+    const raw = this.db.getDatabase();
+    if (!this.getById(id)) return undefined;
+    raw.prepare('UPDATE memory_frames SET metadata = ? WHERE id = ?').run(metadata, id);
     return this.getById(id);
   }
 

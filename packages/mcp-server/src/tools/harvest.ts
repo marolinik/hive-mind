@@ -6,6 +6,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import fs from 'node:fs';
+import { RawArchive, readArchiveUids, withArchiveUid } from '@hive-mind/core';
 import {
   getFrameStore,
   getSessions,
@@ -101,11 +102,31 @@ export function registerHarvestTools(server: McpServer): void {
       const maxBefore =
         (rawDb.prepare('SELECT COALESCE(MAX(id), 0) AS m FROM memory_frames').get() as { m: number }).m;
 
+      // Verbatim provenance archive — full immutable source per item, linked from
+      // the summary frame via metadata.archiveUids. Append-only; idempotent.
+      const rawArchive = new RawArchive(getPersonalDb());
+
       for (const item of items) {
         // Build a summary from the conversation
         const content = item.title
           ? `[${item.source}] ${item.title}: ${item.content.slice(0, 2000)}`
           : `[${item.source}] ${item.content.slice(0, 2000)}`;
+
+        // Archive the FULL untruncated verbatim source BEFORE the frame's capped
+        // preview is persisted. Best-effort — a failure must not abort the item
+        // (degraded provenance beats a lost import); never silent.
+        let archiveUid: string | undefined;
+        try {
+          archiveUid = rawArchive.append({
+            source: item.source,
+            sourceRef: item.id,
+            title: item.title,
+            content: item.content,
+            sourceTimestamp: item.timestamp,
+          }).archiveUid;
+        } catch (err) {
+          console.error('[harvest] raw_archive append failed; frame persists without provenance link:', err);
+        }
 
         // createIFrame handles dedup internally — returns existing frame if content matches
         const frame = frameStore.createIFrame(
@@ -114,6 +135,26 @@ export function registerHarvestTools(server: McpServer): void {
           'normal',
           'import',
         );
+
+        // Stamp provenance metadata. On a fresh frame (default '{}' metadata)
+        // record sourceId + the archive link; on an already-stamped / dedup'd
+        // frame, accumulate the archiveUid into the canonical archiveUids[]
+        // without clobbering existing metadata.
+        if (!frame.metadata || frame.metadata === '{}') {
+          frameStore.setMetadata(frame.id, JSON.stringify({
+            sourceId: item.id,
+            ...(archiveUid ? { archiveUids: [archiveUid] } : {}),
+          }));
+        } else if (archiveUid) {
+          try {
+            const meta = JSON.parse(frame.metadata) as Record<string, unknown>;
+            // Only write when the uid set actually grows (avoids needless setMetadata
+            // churn on re-imports). withArchiveUid migrates any legacy scalar → array.
+            if (!readArchiveUids(meta).includes(archiveUid)) {
+              frameStore.setMetadata(frame.id, JSON.stringify(withArchiveUid(meta, archiveUid)));
+            }
+          } catch { /* malformed metadata — leave as-is */ }
+        }
 
         // Frames created during this batch have id > maxBefore.
         // Dedup hits return the original frame whose id is older.

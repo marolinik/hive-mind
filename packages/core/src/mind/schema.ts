@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS memory_frames (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   last_accessed TEXT NOT NULL DEFAULT (datetime('now')),
   content_hash TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}',
   FOREIGN KEY (gop_id) REFERENCES sessions(gop_id)
 );
 CREATE INDEX IF NOT EXISTS idx_frames_gop_t ON memory_frames (gop_id, t);
@@ -162,6 +163,32 @@ CREATE TABLE IF NOT EXISTS memory_frame_chunks (
   UNIQUE(frame_id, chunk_idx)
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_frame ON memory_frame_chunks (frame_id);
+
+-- Verbatim Provenance Archive (#7, 2026-06-30): append-only, immutable, full-fidelity
+-- copy of each harvested source item. Distilled/imported frames link back via
+-- memory_frames.metadata.archiveUid. NOT part of the retrieval corpus (no FTS/vec) —
+-- audit/reconstruction only. Append-only enforced by BEFORE UPDATE/DELETE triggers.
+CREATE TABLE IF NOT EXISTS raw_archive (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  archive_uid TEXT NOT NULL UNIQUE,
+  source TEXT NOT NULL,
+  source_ref TEXT,
+  title TEXT,
+  content TEXT NOT NULL,
+  content_sha256 TEXT NOT NULL,
+  injection_flagged INTEGER NOT NULL DEFAULT 0,
+  injection_flags TEXT NOT NULL DEFAULT '',
+  source_timestamp TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_raw_archive_source_ref ON raw_archive (source, source_ref);
+CREATE INDEX IF NOT EXISTS idx_raw_archive_created ON raw_archive (created_at DESC);
+CREATE TRIGGER IF NOT EXISTS raw_archive_no_update
+BEFORE UPDATE ON raw_archive
+BEGIN SELECT RAISE(ABORT, 'raw_archive is append-only (verbatim provenance archive)'); END;
+CREATE TRIGGER IF NOT EXISTS raw_archive_no_delete
+BEFORE DELETE ON raw_archive
+BEGIN SELECT RAISE(ABORT, 'raw_archive is append-only (verbatim provenance archive)'); END;
 `;
 
 // The sqlite-vec virtual table is created separately because it requires the

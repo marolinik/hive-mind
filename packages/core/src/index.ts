@@ -68,6 +68,11 @@ export type {
   ReconstructedState,
 } from './mind/frames.js';
 
+// Verbatim provenance archive — append-only, immutable full-fidelity copy of
+// each harvested source item. Frames link back via metadata.archiveUids.
+export { RawArchive, hashRaw, readArchiveUids, withArchiveUid } from './mind/raw-archive.js';
+export type { RawArchiveRow, ArchiveInput } from './mind/raw-archive.js';
+
 // Sessions
 export { SessionStore } from './mind/sessions.js';
 export type { Session } from './mind/sessions.js';
