@@ -1,9 +1,11 @@
 # LongMemEval Results — hive-mind Memory Substrate
 
-> **STATUS: PRELIMINARY / IN PROGRESS.** The harness is validated end-to-end; the
-> first stratified pilot (N=100, GPT-4o) is running. This file is updated with the
-> measured number on completion. Nothing here is a SOTA claim yet — see the honest
-> framing below.
+> **STATUS: ladder complete (GPT-4o protocol).** Best config = **Phase 1b-ii, 77.5%**
+> (N=498). Ladder: base 66.2 -> 1b-i (within base) -> **1b-ii 77.5** -> 1b-iii null
+> (temporal, not run at scale) -> 1b-iv 74.8 (regression). Below the leaderboard
+> (Mastra 94.9 / mem0 93.4 / Supermemory 85.4, all GPT-4o-family) — honest framing
+> below. Temporal is a confirmed hard wall for date-based levers; the real
+> bottleneck is query-side event retrieval.
 
 ## Configuration
 
@@ -86,6 +88,31 @@ is kept: the lever remains valid for LoCoMo-style corpora without session dates.
 
 These require query-side date windowing + reference-date injection, not write-time
 resolution. Left as the next dedicated temporal iteration.
+
+### Phase 1b-iv (reference-date injection + duration answer policy) — REGRESSION
+
+Final N=496, GPT-4o. Overall **74.8% < 1b-ii 77.5%**. Definitive same-instance
+head-to-heads vs 1b-ii:
+
+| Category | n | 1b-ii | 1b-iv | flips | net |
+|---|---:|---:|---:|---|---:|
+| temporal-reasoning | 132 | 78 | 80 | +7 / -5 | **+2** |
+| single-session-preference | 29 | 21 | 16 | +1 / -6 | **-5** |
+
+The reference-date + duration levers gave a **tiny real temporal gain (+2/132,
+~+0.4pp overall)**, but the reworked answer policy **regressed preference (-5) and
+multi-session (69.9 -> 63.9)** — net **-2.7pp overall**. Optimizing the answer
+prompt for temporal quietly cost other categories (only visible via per-category
+same-instance tracking, not the overall number).
+
+**Conclusion.** Both date-based temporal levers (1b-iii write-time, 1b-iv
+reference-date/duration) fail to move LongMemEval temporal beyond noise
+same-instance. **1b-ii (77.5%) is the best config.** The real temporal bottleneck
+is query-side event retrieval (fetching the RIGHT event for "the museum two months
+ago"-style questions), a harder retrieval problem than date arithmetic. The
+temporal-focused answer policy should NOT be promoted; if pursued, isolate the
+reference-date line onto 1b-ii's policy to avoid the preference cost, but the
++2/132 ceiling makes it low-value.
 
 ## Where this sits vs the field (external, June 2026)
 
