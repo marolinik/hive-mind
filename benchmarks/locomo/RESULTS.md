@@ -1,4 +1,38 @@
-# LoCoMo v5 — Claude Opus 4.7 as Final Benchmark Subject
+# LoCoMo — Memory SOTA 86.49% (7-lane W4, N=1540, same-judge vs Memori)
+
+**On LoCoMo under Memori's own published protocol (gpt-4.1-mini answerer + judge, N=1,540), this
+substrate scores 86.49% overall — +4.54pp over Memori's 81.95% (one-sample z=4.64, p<10⁻⁵),
+leading every category.** Reproduced 2026-07-01; verify offline:
+`node benchmarks/locomo/artifacts/w4-n1540/recount.mjs`.
+
+| Category | Ours (7-lane W4) | Memori (pub) | Δ | n |
+|---|--:|--:|--:|--:|
+| single-hop | 92.27 | 87.87 | +4.40 | 841 |
+| multi-hop | 80.50 | 72.70 | +7.80 | 282 |
+| temporal | 81.62 | 80.37 | +1.25 | 321 |
+| open-ended | 69.79 | 63.54 | +6.25 | 96 |
+| **overall** | **86.49** (1332/1540) | **81.95** | **+4.54** | 1540 |
+
+vs Mem0 (same-judge, our ruler): 86.49 vs 73.96, **+12.53pp** overall; temporal 81.62 vs 50.78, **+30.84pp**.
+Memori baseline reproduced first on our harness: nb02 = 81.98 vs published 81.95 (ruler validated).
+
+**Evidence (pinned, offline-verifiable):** `artifacts/w4-n1540/` — answers, judgments, `recount.mjs`
+(recounts 1332/1540), and the full report `RESULT-86.49-vs-Memori.md`. 7 lanes = distilled +
+semantic + importance-K5 + episodic + profiles + date-window + raw-detail (CE-reranked). The
+winning-stack substrate code is in this repo (`packages/core/src/mind/`).
+
+> **Note.** An earlier draft circulated an **87.66%** figure; it did not reproduce on a fresh judge
+> pass (stale-verdict-replay inflation — reusing a judgments file replays old verdicts) and is
+> superseded by the 86.49% above. Always judge with a fresh output tag.
+
+---
+
+## Earlier measurement — v5 (N=320, 2026-05, retained for audit trail)
+
+_Superseded as the headline by the 7-lane W4 N=1540 same-judge SOTA above; retained for the
+substrate-is-the-moat finding + the trio-strict audit trail._
+
+### LoCoMo v5 — Claude Opus 4.7 as Final Benchmark Subject
 
 **Run date:** 2026-05-11
 **Subject model:** `claude-opus-4-7` (Anthropic Messages API)
