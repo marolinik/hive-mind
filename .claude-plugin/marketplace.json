@@ -11,7 +11,7 @@
   "plugins": [
     {
       "name": "hive-mind",
-      "description": "Local-first persistent memory + in-loop context for Claude Code. SQLite-backed, MCP-compatible, semantic + FTS5 hybrid search. Validated against LoCoMo at 73.1% with Opus 4.7 (+4.6pp over Mem0 paper baseline).",
+      "description": "Local-first persistent memory + in-loop context for Claude Code. SQLite-backed, MCP-compatible, semantic + FTS5 hybrid search. Validated against LoCoMo at 86.49% same-judge vs Memori (+4.54pp, N=1,540, z=4.64).",
       "source": "."
     }
   ]

@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **LoCoMo headline corrected 87.66% → 86.49%.** An earlier same-judge N=1,540 run reported 87.66%; it did **not** reproduce on a fresh judge pass (stale-verdict-replay inflation — reusing a judgments file replays old verdicts). The reproducible 7-lane W4 figure is **86.49%** (+4.54pp over Memori 81.95%, one-sample z=4.64, p<10⁻⁵), leading every category. Evidence pinned + offline-verifiable at `benchmarks/locomo/artifacts/w4-n1540/` (`node recount.mjs` → 1332/1540). README badge, `benchmarks/locomo/RESULTS.md`, and the marketplace description updated. The earlier N=320 conservative arc (73.1% self-judge / 67.8% trio-strict) is retained for audit.
+
 ## [0.4.0] - 2026-05-31
 
 Release-hardening + OSS hygiene. The repo now builds green, reproduces on any clean checkout, and ships real CI gates.

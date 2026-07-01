@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/marolinik/hive-mind/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/marolinik/hive-mind/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![LoCoMo: 73.1%](https://img.shields.io/badge/LoCoMo-73.1%25%20(%2B4.6pp%20vs%20Mem0)-brightgreen.svg)](./benchmarks/locomo/RESULTS.md)
+[![LoCoMo: 86.49%](https://img.shields.io/badge/LoCoMo-86.49%25%20(%2B4.54pp%20vs%20Memori)-brightgreen.svg)](./benchmarks/locomo/RESULTS.md)
 [![npm: core](https://img.shields.io/npm/v/@hive-mind/core.svg?label=%40hive-mind%2Fcore)](https://www.npmjs.com/package/@hive-mind/core)
 [![npm: wiki-compiler](https://img.shields.io/npm/v/@hive-mind/wiki-compiler.svg?label=%40hive-mind%2Fwiki-compiler)](https://www.npmjs.com/package/@hive-mind/wiki-compiler)
 [![npm: mcp-server](https://img.shields.io/npm/v/@hive-mind/mcp-server.svg?label=%40hive-mind%2Fmcp-server)](https://www.npmjs.com/package/@hive-mind/mcp-server)
@@ -15,7 +15,7 @@
 Persistent memory, semantic search, knowledge graph, and wiki compiler for AI agents.
 Runs locally. Zero cloud dependency.
 
-**📊 Benchmark:** Self-judge **73.1% (Opus 4.7) / 73.4% (Qwen3.6-35B)** on [LoCoMo](./benchmarks/locomo/RESULTS.md) N=320 stratified, **+4.6pp over Mem0 paper baseline**. Trio-strict ensemble (Opus 4.7 + GPT-5.5 + MiniMax M2.7): **67.8%**; self-judge inflation +5.3pp. Substrate-claim memory-lift: Fisher one-sided p = 8.07 × 10⁻¹⁸ at N=400 (retrieval 22.25% vs no-context 3.00%).
+**📊 Benchmark:** On [LoCoMo](./benchmarks/locomo/RESULTS.md) under Memori's own same-judge protocol (gpt-4.1-mini answerer+judge, N=1,540), **86.49% overall — a new state of the art, +4.54pp over Memori 81.95%** (z=4.64, p<10⁻⁵), leading every category; verify offline (`node benchmarks/locomo/artifacts/w4-n1540/recount.mjs`). Earlier conservative N=320 arc: trio-strict **67.8%** / self-judge 73.1%. Substrate-claim memory-lift: Fisher one-sided p = 8.07 × 10⁻¹⁸ at N=400.
 
 ---
 
@@ -318,7 +318,7 @@ hive-mind/
 
 ## Benchmarks
 
-See [`benchmarks/locomo/`](./benchmarks/locomo/) for the LoCoMo benchmark harness, results (73.1% Opus 4.7 / 73.4% Qwen3.6 — substrate ≈ subject), and methodology docs. The pass criterion is memory-lift over no-context baseline; the substrate-claim result (Stage 3 v6 N=400) is Fisher one-sided p = 8.07 × 10⁻¹⁸.
+See [`benchmarks/locomo/`](./benchmarks/locomo/) for the LoCoMo benchmark harness, results (**86.49%** 7-lane W4 same-judge SOTA, N=1,540; earlier N=320 trio-strict 67.8%), and methodology docs. The substrate-claim result (Stage 3 v6 N=400) is Fisher one-sided p = 8.07 × 10⁻¹⁸.
 
 ## Contributing
 

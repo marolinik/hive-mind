@@ -1,6 +1,6 @@
 # LoCoMo Benchmark — hive-mind Memory Substrate
 
-**Headline:** 73.1% (Opus 4.7) / 73.4% (Qwen3.6-35B) on N=320 stratified, **+4.6pp over Mem0 paper** under identical protocol.
+**Headline:** **86.49% overall** (7-lane W4, N=1,540) under Memori's own same-judge protocol (gpt-4.1-mini answerer+judge), **+4.54pp over Memori 81.95%** (z=4.64, p<10⁻⁵) — verify offline with `node artifacts/w4-n1540/recount.mjs`. Earlier N=320 arc (retained below): 73.1% self-judge / 67.8% trio-strict.
 
 > Two very different SOTA models converge to within 0.3pp on identical retrieval substrate. The substrate, not the subject, is the binding constraint.
 
