@@ -60,10 +60,32 @@ Those are exactly the Phase 1b-ii lanes (`24-run-lanes-plus.mjs`).
 
 The profile-card synthesis lane + infer-preferences answer policy delivered the
 predicted category lifts (preference +46.6, multi-session +19.5). Overall 66.2 -> 77.5.
-**Temporal (59.1%, 132 questions) is the remaining anchor** and the target of Phase
-1b-iii (`26-run-lanes-temporal.mjs`, write-time date resolution). Note: interim
+**Temporal (59.1%, 132 questions) is the remaining anchor.** Note: interim
 in-flight checkpoints read ~83% because the id-sorted sample front-loads easier
 single-session instances; the final full-set number is 77.5%.
+
+### Phase 1b-iii (write-time date resolution) — NEGATIVE RESULT
+
+Controlled same-instance head-to-head on 8 temporal questions: **1b-ii 5/8 vs
+1b-iii 5/8 — identical, zero verdicts changed**, despite date resolution firing
+(4-18 cues resolved per instance). Write-time relative-date resolution (the LoCoMo
+"P4" lever) does **not** transfer to LongMemEval: LongMemEval sessions carry
+explicit dates (`haystack_dates`), so the discussion-vs-event-date gap P4 fixes is
+largely absent here (the base ingest already stamps the true session date). The
+full N=500 run was **not** launched — the head-to-head showed no signal, so it
+would have been ~5.5h for a null lever. (The cell, `26-run-lanes-temporal.mjs`,
+is kept: the lever remains valid for LoCoMo-style corpora without session dates.)
+
+**Diagnosed temporal failure modes (the real levers for a dedicated iteration):**
+1. **Wrong-event retrieval** — "a museum two months ago, with a friend?" retrieves
+   a different museum visit. Needs QUERY-side relative-date resolution ("two months
+   ago" -> date window) to retrieve the right event.
+2. **Missing reference date** — "how many months since I last visited" needs the
+   conversation's "now" date (model guessed 12 vs gold 5).
+3. **Judge noise** — one "30 days" answer matching the gold was marked wrong.
+
+These require query-side date windowing + reference-date injection, not write-time
+resolution. Left as the next dedicated temporal iteration.
 
 ## Where this sits vs the field (external, June 2026)
 
