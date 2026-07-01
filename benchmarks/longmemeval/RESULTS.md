@@ -42,7 +42,28 @@ write-time distillation. The ladder localizes the gap precisely: single-session
 categories are ~95-99% (retrieval works), while the three synthesis/temporal
 categories lag — temporal 48.9 (needs write-time date resolution, the LoCoMo P4
 rung), preference 26.7 + multi-session 50.4 (need profile cards, the W2a rung).
-Those are exactly the Phase 1b-ii lanes (`24-run-lanes-plus.mjs`, queued).
+Those are exactly the Phase 1b-ii lanes (`24-run-lanes-plus.mjs`).
+
+### Phase 1b-ii (profile card + infer-preferences answer policy) — `24-run-lanes-plus.mjs`
+
+**N=498 (2 transient embedder aborts excluded), GPT-4o answerer + judge:**
+
+| Category | 1b-i (N=500) | **1b-ii (N=498)** | delta |
+|---|---:|---:|---:|
+| single-session-user | 98.6 | 100.0 | +1.4 |
+| single-session-assistant | 94.6 | 98.2 | +3.6 |
+| knowledge-update | 88.5 | 88.5 | 0.0 |
+| multi-session | 50.4 | 69.9 | **+19.5** |
+| single-session-preference | 26.7 | 73.3 | **+46.6** |
+| temporal-reasoning | 48.9 | 59.1 | +10.2 |
+| **OVERALL** | **66.2** | **77.5** | **+11.3** |
+
+The profile-card synthesis lane + infer-preferences answer policy delivered the
+predicted category lifts (preference +46.6, multi-session +19.5). Overall 66.2 -> 77.5.
+**Temporal (59.1%, 132 questions) is the remaining anchor** and the target of Phase
+1b-iii (`26-run-lanes-temporal.mjs`, write-time date resolution). Note: interim
+in-flight checkpoints read ~83% because the id-sorted sample front-loads easier
+single-session instances; the final full-set number is 77.5%.
 
 ## Where this sits vs the field (external, June 2026)
 
