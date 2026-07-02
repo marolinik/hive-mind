@@ -94,7 +94,7 @@ export function registerKnowledgeTools(server: McpServer): void {
     {
       type: z.enum(ENTITY_TYPES).describe('Entity type'),
       name: z.string().describe('Entity name (e.g., "John Smith", "Project Alpha")'),
-      properties: z.record(z.unknown()).optional()
+      properties: z.record(z.string(), z.unknown()).optional()
         .describe('Key-value properties for the entity'),
       workspace: z.string().optional()
         .describe('Workspace ID. Omit for personal knowledge graph'),
@@ -147,7 +147,7 @@ export function registerKnowledgeTools(server: McpServer): void {
       relation_type: z.string().describe('Relationship type (e.g., "works_on", "knows", "uses")'),
       confidence: z.number().min(0).max(1).optional()
         .describe('Confidence score 0-1. Defaults to 1.0'),
-      properties: z.record(z.unknown()).optional()
+      properties: z.record(z.string(), z.unknown()).optional()
         .describe('Additional relation properties'),
       workspace: z.string().optional()
         .describe('Workspace ID. Omit for personal knowledge graph'),
