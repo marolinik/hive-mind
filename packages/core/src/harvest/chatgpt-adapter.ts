@@ -21,7 +21,7 @@
  * Scrub: none — this module has no proprietary dependencies.
  */
 
-import { randomUUID } from 'node:crypto';
+import { stableHarvestId } from './stable-id.js';
 import type { SourceAdapter, UniversalImportItem, ConversationMessage } from './types.js';
 import { asRecord, getArray, getNumber, getString, type RawRecord } from './raw-types.js';
 
@@ -113,7 +113,9 @@ export class ChatGPTAdapter implements SourceAdapter {
       const createTime = getNumber(conv, 'create_time');
 
       items.push({
-        id: randomUUID(),
+        // #7 sticky erasure: stable per-conversation id (keyed on the export's own
+        // conversation id, NOT content, so a grown conversation keeps its id).
+        id: stableHarvestId('chatgpt', getString(conv, 'id') ?? getString(conv, 'conversation_id') ?? `conv\x00${title}\x00${createTime ?? ''}`),
         source: 'chatgpt',
         type: 'conversation',
         title,
@@ -131,7 +133,9 @@ export class ChatGPTAdapter implements SourceAdapter {
     // Also extract custom instructions / memory as separate items
     if (root?.user_custom_instructions) {
       items.push({
-        id: randomUUID(),
+        // 'singleton' discriminator (2 parts) so this can't collide with a
+        // conversation whose conv.id is literally the string 'custom_instructions'.
+        id: stableHarvestId('chatgpt', 'singleton', 'custom_instructions'),
         source: 'chatgpt',
         type: 'instruction',
         title: 'ChatGPT Custom Instructions',
@@ -151,7 +155,11 @@ export class ChatGPTAdapter implements SourceAdapter {
           ? rawMem
           : (mem && (getString(mem, 'content') ?? getString(mem, 'text'))) ?? JSON.stringify(rawMem);
         items.push({
-          id: randomUUID(),
+          // No stable per-memory id exists in the export, so key on created_at+content
+          // (the best available surrogate). Caveat: ChatGPT memories are user-editable,
+          // so an EDIT changes the id → erasure isn't sticky across an edit (bounded,
+          // documented tradeoff — same class as the universal-text content-keyed path).
+          id: stableHarvestId('chatgpt', 'memory', (mem && getString(mem, 'created_at')) ?? '', content),
           source: 'chatgpt',
           type: 'memory',
           title: 'ChatGPT Memory',

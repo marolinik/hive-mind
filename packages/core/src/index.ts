@@ -75,6 +75,9 @@ export type { RawArchiveRow, ArchiveInput } from './mind/raw-archive.js';
 // GDPR Art.17 frame + index + KG erasure companion (subject/frame-level DSAR sweep).
 export { MindErasure } from './mind/erasure.js';
 export type { EraseResult } from './mind/erasure.js';
+// #7 Art.17 "sticky erasure" — erased-subject suppression list (re-import guard).
+export { SuppressionStore } from './mind/suppression.js';
+export type { SuppressedSubject } from './mind/suppression.js';
 
 // Sessions
 export { SessionStore } from './mind/sessions.js';

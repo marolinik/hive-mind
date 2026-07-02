@@ -14,6 +14,7 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import type { MindDB } from './db.js';
+import { SuppressionStore } from './suppression.js';
 import { scanForInjection } from '../injection-scanner.js';
 
 export interface ArchiveInput {
@@ -79,10 +80,15 @@ export function withArchiveUid(meta: Record<string, unknown>, uid: string): Reco
 
 export class RawArchive {
   private db: MindDB;
-  constructor(db: MindDB) { this.db = db; }
+  private suppression: SuppressionStore;
+  constructor(db: MindDB) { this.db = db; this.suppression = new SuppressionStore(db); }
 
   /** Idempotent append. INSERT OR IGNORE on the UNIQUE archive_uid makes a
-   *  re-append a no-op. Injection-scans (4KB probe) but stores verbatim. */
+   *  re-append a no-op. Injection-scans (4KB probe) but stores verbatim.
+   *  #7 "sticky erasure": a subject on the erased-subject suppression list is NOT
+   *  re-materialized — the append is skipped (created:false). This makes stickiness
+   *  an INTRINSIC property of the archive (belt to the harvest loops' suspenders),
+   *  so a direct caller can't resurrect an erased subject by re-appending. */
   append(input: ArchiveInput): { archiveUid: string; created: boolean } {
     const raw = this.db.getDatabase();
     // archive_uid is PER-SOURCE: identical content from two different sources
@@ -92,6 +98,10 @@ export class RawArchive {
     // collapses (idempotency). content_sha256 stays a content-only integrity
     // anchor — verify the verbatim, or find identical content across sources.
     const archiveUid = hashRaw(`${input.source}\x00${input.sourceRef ?? ''}\x00${input.content}`);
+    // #7 sticky erasure: skip re-materializing an erased subject (fail-closed).
+    if (this.suppression.isSuppressed(input.source, input.sourceRef ?? '')) {
+      return { archiveUid, created: false };
+    }
     const contentSha = hashRaw(input.content);
     // injection_flagged is a 4KB PROBE (same budget as the harvest pipeline's
     // Pass 0) — advisory, NOT a full-content guarantee. Content is stored

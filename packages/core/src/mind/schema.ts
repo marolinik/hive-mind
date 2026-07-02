@@ -221,6 +221,25 @@ BEGIN SELECT RAISE(ABORT, 'raw_archive is append-only; only a one-time canonical
 CREATE TRIGGER IF NOT EXISTS raw_archive_no_delete
 BEFORE DELETE ON raw_archive
 BEGIN SELECT RAISE(ABORT, 'raw_archive is append-only (verbatim provenance archive)'); END;
+
+-- Erased-subject suppression list (#7 Art.17 "sticky erasure", 2026-07-02). When a
+-- data subject is erased (MindErasure.eraseBySourceRef), its (source, source_ref) is
+-- recorded here; every re-import write seam consults it and SKIPS re-materialization,
+-- so an exercised right-to-erasure survives a later re-export/re-sync of the source.
+-- Keyed on the SUBJECT pair ONLY — deliberately NO content / content_sha256 (a
+-- content-keyed tombstone would reintroduce the re-identification vector the
+-- raw_archive archive_uid rotation removed). Rows are DELETABLE (unlike raw_archive):
+-- deletion is the deliberate re-consent / "allow re-import again" path — hence no
+-- immutability trigger.
+CREATE TABLE IF NOT EXISTS erased_subjects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source TEXT NOT NULL,
+  source_ref TEXT NOT NULL,
+  erased_at TEXT NOT NULL DEFAULT (datetime('now')),
+  reason TEXT,
+  UNIQUE(source, source_ref)
+);
+CREATE INDEX IF NOT EXISTS idx_erased_subjects_lookup ON erased_subjects (source, source_ref);
 `;
 
 // The sqlite-vec virtual table is created separately because it requires the

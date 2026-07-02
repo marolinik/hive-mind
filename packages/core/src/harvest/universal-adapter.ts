@@ -28,7 +28,7 @@
  * `.exec(` call sites (defuses repo-level security scanners).
  */
 
-import { randomUUID } from 'node:crypto';
+import { stableHarvestId } from './stable-id.js';
 import type {
   SourceAdapter,
   UniversalImportItem,
@@ -111,7 +111,9 @@ export class UniversalAdapter implements SourceAdapter {
       const messages = this.extractMessagesFromText(conv.content);
 
       items.push({
-        id: randomUUID(),
+        // raw text paste has no id — content is the only surrogate (NOT growth-stable;
+        // documented tradeoff, no better anchor exists for free-text).
+        id: stableHarvestId('universal-text', source, conv.content),
         source,
         type: messages.length > 0 ? 'conversation' : 'memory',
         title: conv.title,
@@ -149,15 +151,23 @@ export class UniversalAdapter implements SourceAdapter {
 
         if (messages.length === 0) continue;
 
+        const convContent = messages.map((m) => `${m.role}: ${m.text}`).join('\n\n');
+        const convId = getString(conv, 'id');
         items.push({
-          id: randomUUID(),
+          // Stable per-conversation id when the export gives one (growth-stable). Else
+          // fall back to source+title+created_at PLUS content: a bare message-array paste
+          // has no id/timestamp and a CONSTANT synthetic title ('Imported Conversation'),
+          // so without content every such paste collapses to ONE (source, source_ref)
+          // subject key → cross-subject over-suppression / co-erasure. Content makes them
+          // distinct (id-less → not growth-stable, the documented universal-text tradeoff).
+          id: stableHarvestId('universal-json', convId ?? `${source}\x00${title}\x00${firstString(conv, 'created_at', 'createTime', 'timestamp') ?? ''}\x00${convContent}`),
           source,
           type: 'conversation',
           title,
-          content: messages.map((m) => `${m.role}: ${m.text}`).join('\n\n'),
+          content: convContent,
           messages,
           timestamp: firstString(conv, 'created_at', 'createTime', 'timestamp') ?? new Date().toISOString(),
-          metadata: { parseMethod: 'universal-json', detectedSource: source, conversationId: getString(conv, 'id') },
+          metadata: { parseMethod: 'universal-json', detectedSource: source, conversationId: convId },
         });
       }
     }
@@ -165,7 +175,7 @@ export class UniversalAdapter implements SourceAdapter {
     if (items.length === 0) {
       const record = asRecord(input);
       items.push({
-        id: randomUUID(),
+        id: stableHarvestId('universal-json-raw', source, JSON.stringify(input)),
         source,
         type: 'memory',
         title: (record && getString(record, 'title')) ?? 'Imported Data',
