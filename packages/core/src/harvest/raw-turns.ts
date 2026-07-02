@@ -92,8 +92,11 @@ export function parseRawTurnHeader(content: string): ParsedRawTurnHeader | null 
   return { conv: m[1], turn: parseInt(m[2], 10), speaker: m[3] };
 }
 
-/** Conversation key for an import item (sanitized, stable across re-imports). */
-export function rawTurnConvKey(item: Pick<UniversalImportItem, 'id' | 'source'>): string {
+/** Conversation key for an import item (sanitized, stable across re-imports).
+ *  Params are widened to plain strings so the GDPR erasure path (which knows a
+ *  subject only as free-string source + source_ref) can reconstruct the exact
+ *  same key; UniversalImportItem's narrower fields still satisfy it. */
+export function rawTurnConvKey(item: { source: string; id: string }): string {
   return sanitizeToken(`${item.source}-${item.id}`, 64);
 }
 

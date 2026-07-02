@@ -420,6 +420,29 @@ export class KnowledgeGraph {
     return distances;
   }
 
+  /** Create + link a batch of entities to the frame they were extracted from,
+   *  so the kg_entity_frames bridge reaches them (GDPR erasure orphan sweep +
+   *  contextual scoring). Per-entity failures are non-fatal. Returns the count
+   *  created. */
+  importEntitiesForFrame(
+    frameId: number,
+    entities: Array<{ name: string; type?: string }>,
+    provenance: { source: string; importedFrom?: string },
+  ): number {
+    let created = 0;
+    for (const ent of entities) {
+      try {
+        const e = this.createEntity(ent.type || 'concept', ent.name, {
+          source: provenance.source,
+          imported_from: provenance.importedFrom,
+        });
+        this.linkEntityToFrame(e.id, frameId);
+        created++;
+      } catch { /* non-fatal per-entity (schema-rejected / bad name) — as in the harvest routes */ }
+    }
+    return created;
+  }
+
   /** Link an entity to a frame it was extracted from (kg_entity_frames bridge).
    *  Powers the 'contextual' scoring signal. Idempotent per (entity, frame). */
   linkEntityToFrame(entityId: number, frameId: number): void {

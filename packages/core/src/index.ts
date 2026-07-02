@@ -70,8 +70,11 @@ export type {
 
 // Verbatim provenance archive — append-only, immutable full-fidelity copy of
 // each harvested source item. Frames link back via metadata.archiveUids.
-export { RawArchive, hashRaw, readArchiveUids, withArchiveUid } from './mind/raw-archive.js';
+export { RawArchive, hashRaw, readArchiveUids, withArchiveUid, RAW_ARCHIVE_REDACTION_MARKER } from './mind/raw-archive.js';
 export type { RawArchiveRow, ArchiveInput } from './mind/raw-archive.js';
+// GDPR Art.17 frame + index + KG erasure companion (subject/frame-level DSAR sweep).
+export { MindErasure } from './mind/erasure.js';
+export type { EraseResult } from './mind/erasure.js';
 
 // Sessions
 export { SessionStore } from './mind/sessions.js';
