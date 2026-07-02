@@ -20,7 +20,7 @@
  * Scrub: none — this module has no proprietary dependencies.
  */
 
-import { randomUUID } from 'node:crypto';
+import { stableHarvestId } from './stable-id.js';
 import type { SourceAdapter, UniversalImportItem, ConversationMessage } from './types.js';
 import { asRecord, firstString, getArray, getString, type RawRecord } from './raw-types.js';
 
@@ -80,7 +80,8 @@ export class GeminiAdapter implements SourceAdapter {
       if (messages.length === 0) continue;
 
       items.push({
-        id: randomUUID(),
+        // #7 sticky erasure: conversation id (Takeout export id), not content.
+        id: stableHarvestId('gemini', firstString(conv, 'id', 'conversationId') ?? `${title}\x00${firstString(conv, 'createTime', 'create_time', 'created_at') ?? ''}`),
         source: 'gemini',
         type: 'conversation',
         title,
@@ -115,7 +116,9 @@ export class GeminiAdapter implements SourceAdapter {
     if (messages.length === 0) return [];
 
     return [{
-      id: randomUUID(),
+      // {history} API dump carries no id — title+model is the only stable surrogate
+      // (documented collision risk for two same-title+model dumps; no better anchor).
+      id: stableHarvestId('gemini', getString(conv, 'title') ?? 'Gemini Conversation', getString(conv, 'model') ?? ''),
       source: 'gemini',
       type: 'conversation',
       title: getString(conv, 'title') ?? 'Gemini Conversation',

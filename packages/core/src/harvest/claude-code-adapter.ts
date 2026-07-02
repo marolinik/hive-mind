@@ -13,7 +13,8 @@
  * This is a FilesystemAdapter — it reads directly from disk.
  */
 
-import { randomUUID } from 'node:crypto';
+import { stableHarvestId } from './stable-id.js';
+import { decisionOfSubjectId } from './decision-derivation.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { FilesystemAdapter, UniversalImportItem, ImportItemType } from './types.js';
@@ -121,7 +122,10 @@ export class ClaudeCodeAdapter implements FilesystemAdapter {
     for (const { filePath, content } of ruleFiles) {
       const relPath = path.relative(dirPath, filePath);
       items.push({
-        id: randomUUID(),
+        // #7 sticky erasure: file path is the stable id (survives content growth).
+        // Normalize the OS separator so the SAME tree scanned on win32 vs POSIX
+        // yields the SAME id (stableHarvestId's cross-process determinism contract).
+        id: stableHarvestId('claude-code', relPath.split(path.sep).join('/')),
         source: 'claude-code',
         type: 'rule',
         title: `Rule: ${path.basename(filePath, '.md')}`,
@@ -140,7 +144,7 @@ export class ClaudeCodeAdapter implements FilesystemAdapter {
         try {
           const content = fs.readFileSync(fullPath, 'utf-8');
           items.push({
-            id: randomUUID(),
+            id: stableHarvestId('claude-code', `plans/${planFile}`),
             source: 'claude-code',
             type: 'artifact',
             title: `Plan: ${planFile.replace('.md', '')}`,
@@ -166,7 +170,7 @@ export class ClaudeCodeAdapter implements FilesystemAdapter {
         }
         if (prefs.length > 0) {
           items.push({
-            id: randomUUID(),
+            id: stableHarvestId('claude-code', 'settings.json'),
             source: 'claude-code',
             type: 'preference',
             title: 'Claude Code Settings',
@@ -189,7 +193,7 @@ export class ClaudeCodeAdapter implements FilesystemAdapter {
             const content = fs.readFileSync(claudeMdPath, 'utf-8');
             if (content.trim().length > 50) {
               items.push({
-                id: randomUUID(),
+                id: stableHarvestId('claude-code', `projects/${projEntry.name}/CLAUDE.md`),
                 source: 'claude-code',
                 type: 'artifact',
                 title: `Project CLAUDE.md (${projEntry.name})`,
@@ -241,7 +245,7 @@ export class ClaudeCodeAdapter implements FilesystemAdapter {
           const isState = lowerFile.includes('state');
 
           items.push({
-            id: randomUUID(),
+            id: stableHarvestId('claude-code', `projects/${projectHash}/.mind/${file}`),
             source: 'claude-code',
             type: isDecision ? 'decision' : 'artifact',
             title: `${isDecision ? 'Decisions' : isState ? 'State' : 'Session'}: ${file.replace('.md', '')}`,
@@ -288,7 +292,11 @@ export class ClaudeCodeAdapter implements FilesystemAdapter {
 
       if (decisionLines.length > 0) {
         decisions.push({
-          id: randomUUID(),
+          // derived item — namespaced by the (now-stable) parent id so it never
+          // collides with the parent's own id. decisionOfSubjectId is the SHARED
+          // derivation MindErasure.eraseBySourceRef recomputes to reach + suppress
+          // this derived subject on erasure (#7 P2), so the two sites cannot drift.
+          id: decisionOfSubjectId(item.id),
           source: 'claude-code',
           type: 'decision',
           title: `Decisions from: ${item.title}`,
@@ -322,7 +330,7 @@ export class ClaudeCodeAdapter implements FilesystemAdapter {
         const importType = MEMORY_TYPE_MAP[frontmatter.type ?? ''] ?? 'memory';
 
         items.push({
-          id: randomUUID(),
+          id: stableHarvestId('claude-code', `projects/${projectHash}/memory/${file}`),
           source: 'claude-code',
           type: importType,
           title: frontmatter.name ?? file.replace('.md', ''),

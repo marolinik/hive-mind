@@ -23,7 +23,9 @@
 import type { MindDB } from './db.js';
 import { FrameStore } from './frames.js';
 import { RawArchive, readArchiveUids } from './raw-archive.js';
+import { SuppressionStore } from './suppression.js';
 import { MIND_RAWTURN_PREFIX, rawTurnConvKey } from '../harvest/raw-turns.js';
+import { CLAUDE_CODE_DECISION_SOURCE, decisionOfSubjectId } from '../harvest/decision-derivation.js';
 
 export interface EraseResult {
   /** Derived frames physically deleted (frame + FTS + vec + chunks + chunk-vec). */
@@ -46,11 +48,13 @@ export class MindErasure {
   private db: MindDB;
   private frames: FrameStore;
   private archive: RawArchive;
+  private suppression: SuppressionStore;
 
   constructor(db: MindDB) {
     this.db = db;
     this.frames = new FrameStore(db);
     this.archive = new RawArchive(db);
+    this.suppression = new SuppressionStore(db);
   }
 
   /**
@@ -219,24 +223,20 @@ export class MindErasure {
   }
 
   /**
-   * Subject-level sweep: erase everything derived from a (source, source_ref)
-   * subject. It reaches the subject's derived corpus through THREE keys, because
-   * one harvested item fans out into frames that are keyed differently:
-   *   (a) the distilled SUMMARY frame — linked via metadata.archiveUids;
-   *   (b) the verbatim per-turn [mind-rawturn …] frames — keyed by the conversation
-   *       content prefix (= sanitize(source∥sourceRef)); they carry NO archive link,
-   *       so a link-only sweep would leave the subject's full dialogue recall-able;
-   *   (c) synthesized B-frames that reference any erased frame in their content JSON.
-   * Then it redacts any subject provenance row no frame reached (orphan provenance).
-   * Atomic over the whole sweep.
+   * Subject-level sweep + suppression for a (source, source_ref) subject.
    *
-   * A frame that also links OTHER source_refs is still deleted wholesale (a merged
-   * summary containing the subject's PII cannot be partially redacted) — its other
-   * provenance rows are redacted too, which is the conservative Art.17 outcome.
+   * Erases the subject's whole footprint (eraseSubjectFrames), records it on the
+   * erased-subject suppression list, then — for claude-code only — cascades to the
+   * DERIVED 'decision-of' subject that harvest fans out separately (see below).
+   * The whole operation is ONE transaction, so a rolled-back erase records nothing
+   * and the parent + derived subjects are all-or-nothing.
+   *
+   * This is the SINGLE suppression capture point — subject mode calls here directly;
+   * frame mode reaches it via eraseFrameComplete's sweep() → both surfaces (route +
+   * MCP erase_memory) feed the list with no drift.
    */
   eraseBySourceRef(source: string, sourceRef: string, reason: string): EraseResult {
     return this.db.getDatabase().transaction((): EraseResult => {
-      const raw = this.db.getDatabase();
       const total = zeroResult();
       const add = (r: EraseResult): void => {
         total.framesDeleted += r.framesDeleted;
@@ -246,91 +246,158 @@ export class MindErasure {
         total.relationsErased += r.relationsErased;
       };
 
-      // 1. Every archive uid for this subject.
-      const uids = (raw
-        .prepare('SELECT archive_uid FROM raw_archive WHERE source = ? AND source_ref = ?')
-        .all(source, sourceRef) as Array<{ archive_uid: string }>).map(r => r.archive_uid);
-      // NB: do NOT early-return on an empty uid set. A subject can have verbatim
-      // [mind-rawturn] frames (2b) + referencing B-frames (4) with NO raw_archive
-      // row — a legacy pre-#7 conversation, or one whose raw_archive.append failed
-      // while the raw-turns still wrote. Bailing here left that raw PII dialogue
-      // recall-able (the reference-class leak). Steps 2b/4 key off the conv-prefix
-      // and content references, independent of raw_archive, so they must still run;
-      // 2a and step 5 iterate `uids`, so they are natural no-ops when it is empty.
-      const uidSet = new Set(uids);
+      // Primary subject: erase its whole footprint, then suppress it.
+      // UNCONDITIONAL — even when nothing currently matched, the subject was
+      // EXPLICITLY requested erased, so a LATER re-export/re-sync must not
+      // re-materialize it. (Subject-less frames correctly bypass this via the
+      // frame-mode path, which resolves no subject to record.)
+      add(this.eraseSubjectFrames(source, sourceRef, reason));
+      this.suppression.record(source, sourceRef, reason);
 
-      const frameIds = new Set<number>();
-
-      // 2a. SUMMARY frames linking any subject uid (reverse lookup). LIKE-prefilter
-      //     the metadata JSON, then verify precisely via readArchiveUids (tolerates
-      //     the legacy scalar archiveUid + malformed metadata).
-      const likeStmt = raw.prepare('SELECT id, metadata FROM memory_frames WHERE metadata LIKE ?');
-      for (const uid of uids) {
-        for (const row of likeStmt.all(`%${uid}%`) as Array<{ id: number; metadata?: string }>) {
-          if (!row.metadata) continue;
-          let meta: Record<string, unknown>;
-          try { meta = JSON.parse(row.metadata) as Record<string, unknown>; } catch { continue; }
-          if (!meta || typeof meta !== 'object') continue;
-          if (readArchiveUids(meta).some(u => uidSet.has(u))) frameIds.add(row.id);
+      // #7 P2 — claude-code `decision-of` derived subject. claude-code harvest's
+      // extractDecisions emits a SEPARATE import item keyed on
+      // stableHarvestId('claude-code','decision-of',parentRef) that quotes the
+      // parent's decision lines. It lands as its OWN (source, source_ref) subject
+      // — a distinct archiveUid/raw-turn key, and NOT a B-frame — so the sweep
+      // above never reaches it: the derived frame would survive erasure AND (its
+      // key being un-suppressed) re-materialize on the next re-import. The
+      // persisted frame drops metadata.extractedFrom (harvest stamps only
+      // kind/confidence/status/sourceId/archiveUids), so recompute the derived key
+      // and cascade. SINGLE LEVEL: a decision item is never itself re-derived
+      // (extractDecisions skips type==='decision'), so there is no decision-of-of
+      // chain to follow. The derived suppression is recorded ONLY when the derived
+      // subject had a real footprint at erase time — an unconditional record would
+      // add a phantom, hash-keyed re-consent entry for every claude-code parent
+      // that had no decisions. (Residual: a parent that GAINS decision content
+      // after erasure and is re-harvested is not pre-suppressed on the derived key
+      // — that content post-dates the erasure and is treated as new.)
+      if (source === CLAUDE_CODE_DECISION_SOURCE) {
+        const derivedRef = decisionOfSubjectId(sourceRef);
+        const derived = this.eraseSubjectFrames(source, derivedRef, reason);
+        add(derived);
+        if (derived.framesDeleted > 0 || derived.archiveRedacted > 0) {
+          this.suppression.record(source, derivedRef, reason);
         }
-      }
-
-      // 2b. Verbatim raw-turn frames for this conversation, keyed by content prefix.
-      //     The trailing space after the conv key makes the match EXACT (so a sweep
-      //     of 'item' never catches 'item-9'). Escape LIKE metacharacters (the key
-      //     is sanitized to [A-Za-z0-9_-] but escape defensively).
-      const convKey = rawTurnConvKey({ source, id: sourceRef });
-      const prefix = `${MIND_RAWTURN_PREFIX} conv:${convKey} `.replace(/[\\%_]/g, ch => `\\${ch}`);
-      for (const row of raw
-        .prepare("SELECT id FROM memory_frames WHERE content LIKE ? ESCAPE '\\'")
-        .all(`${prefix}%`) as Array<{ id: number }>) {
-        frameIds.add(row.id);
-      }
-
-      // 2c. Archive-less SUMMARY frames for this subject. 2a is archiveUid-keyed,
-      //     so a harvested summary whose raw_archive.append failed (or a legacy
-      //     pre-#7 frame) — carrying metadata.sourceId but NO archiveUids — slips
-      //     through, leaving the distilled PII recall-able after a subject-level
-      //     DSAR. Recover it symmetric to eraseFrameComplete's fallback: match
-      //     metadata.sourceId === source_ref AND the content platform-prefix
-      //     ('[Harvest:<src>] …' server / '[<src>] …' MCP) === source. The LIKE is
-      //     a prefilter only; the two EXACT code checks are the subject identity,
-      //     so 'item' never over-erases 'item-9' and a sibling subject is safe.
-      //     Escape LIKE metacharacters in source_ref (mirroring 2b) to keep the
-      //     prefilter narrow — the exact meta.sourceId check backstops either way.
-      const srLike = sourceRef.replace(/[\\%_]/g, ch => `\\${ch}`);
-      const metaLike = raw.prepare("SELECT id, content, metadata FROM memory_frames WHERE metadata LIKE ? ESCAPE '\\'");
-      for (const row of metaLike.all(`%${srLike}%`) as Array<{ id: number; content?: string; metadata?: string }>) {
-        if (!row.metadata) continue;
-        let meta: Record<string, unknown>;
-        try { meta = JSON.parse(row.metadata) as Record<string, unknown>; } catch { continue; }
-        if (!meta || typeof meta !== 'object' || meta.sourceId !== sourceRef) continue;
-        const tok = row.content?.match(/^\[(?:Harvest:)?([^\]]+)\]/)?.[1];
-        if (tok === source) frameIds.add(row.id);
-      }
-
-      // 3. Erase the direct frame set; track what was actually deleted for the
-      //    B-frame reference sweep below.
-      const erasedIds = new Set<number>();
-      for (const fid of frameIds) {
-        const r = this.eraseFrameInternal(fid, reason);
-        if (r.framesDeleted > 0) erasedIds.add(fid);
-        add(r);
-      }
-
-      // 4. B-frame reference sweep — a synthesized B-frame references erased
-      //    frames in its content JSON and carries no archiveUids, so 2a/2b cannot
-      //    reach it. Shared with the single-frame path (see sweepReferencingBFrames).
-      add(this.sweepReferencingBFrames(erasedIds, reason));
-
-      // 5. Redact any subject archive row not reached via a frame (orphan
-      //    provenance). Already-redacted rows are idempotent no-ops (return false),
-      //    so this never double-counts rows handled in step 3.
-      for (const uid of uids) {
-        if (this.archive.erase(uid, reason)) total.archiveRedacted += 1;
       }
 
       return total;
     })();
+  }
+
+  /**
+   * Erase everything derived from a (source, source_ref) subject — the sweep
+   * MECHANICS only (no suppression record). It reaches the subject's derived
+   * corpus through THREE keys, because one harvested item fans out into frames
+   * that are keyed differently:
+   *   (a) the distilled SUMMARY frame — linked via metadata.archiveUids;
+   *   (b) the verbatim per-turn [mind-rawturn …] frames — keyed by the conversation
+   *       content prefix (= sanitize(source∥sourceRef)); they carry NO archive link,
+   *       so a link-only sweep would leave the subject's full dialogue recall-able;
+   *   (c) synthesized B-frames that reference any erased frame in their content JSON.
+   * Then it redacts any subject provenance row no frame reached (orphan provenance).
+   *
+   * A frame that also links OTHER source_refs is still deleted wholesale (a merged
+   * summary containing the subject's PII cannot be partially redacted) — its other
+   * provenance rows are redacted too, which is the conservative Art.17 outcome.
+   *
+   * Non-transactional — call inside an ambient transaction only (eraseBySourceRef
+   * wraps it so the primary + derived-subject sweeps commit atomically together).
+   */
+  private eraseSubjectFrames(source: string, sourceRef: string, reason: string): EraseResult {
+    const raw = this.db.getDatabase();
+    const total = zeroResult();
+    const add = (r: EraseResult): void => {
+      total.framesDeleted += r.framesDeleted;
+      total.archiveRedacted += r.archiveRedacted;
+      total.chunkVectorsPurged += r.chunkVectorsPurged;
+      total.entitiesErased += r.entitiesErased;
+      total.relationsErased += r.relationsErased;
+    };
+
+    // 1. Every archive uid for this subject.
+    const uids = (raw
+      .prepare('SELECT archive_uid FROM raw_archive WHERE source = ? AND source_ref = ?')
+      .all(source, sourceRef) as Array<{ archive_uid: string }>).map(r => r.archive_uid);
+    // NB: do NOT early-return on an empty uid set. A subject can have verbatim
+    // [mind-rawturn] frames (2b) + referencing B-frames (4) with NO raw_archive
+    // row — a legacy pre-#7 conversation, or one whose raw_archive.append failed
+    // while the raw-turns still wrote. Bailing here left that raw PII dialogue
+    // recall-able (the reference-class leak). Steps 2b/4 key off the conv-prefix
+    // and content references, independent of raw_archive, so they must still run;
+    // 2a and step 5 iterate `uids`, so they are natural no-ops when it is empty.
+    const uidSet = new Set(uids);
+
+    const frameIds = new Set<number>();
+
+    // 2a. SUMMARY frames linking any subject uid (reverse lookup). LIKE-prefilter
+    //     the metadata JSON, then verify precisely via readArchiveUids (tolerates
+    //     the legacy scalar archiveUid + malformed metadata).
+    const likeStmt = raw.prepare('SELECT id, metadata FROM memory_frames WHERE metadata LIKE ?');
+    for (const uid of uids) {
+      for (const row of likeStmt.all(`%${uid}%`) as Array<{ id: number; metadata?: string }>) {
+        if (!row.metadata) continue;
+        let meta: Record<string, unknown>;
+        try { meta = JSON.parse(row.metadata) as Record<string, unknown>; } catch { continue; }
+        if (!meta || typeof meta !== 'object') continue;
+        if (readArchiveUids(meta).some(u => uidSet.has(u))) frameIds.add(row.id);
+      }
+    }
+
+    // 2b. Verbatim raw-turn frames for this conversation, keyed by content prefix.
+    //     The trailing space after the conv key makes the match EXACT (so a sweep
+    //     of 'item' never catches 'item-9'). Escape LIKE metacharacters (the key
+    //     is sanitized to [A-Za-z0-9_-] but escape defensively).
+    const convKey = rawTurnConvKey({ source, id: sourceRef });
+    const prefix = `${MIND_RAWTURN_PREFIX} conv:${convKey} `.replace(/[\\%_]/g, ch => `\\${ch}`);
+    for (const row of raw
+      .prepare("SELECT id FROM memory_frames WHERE content LIKE ? ESCAPE '\\'")
+      .all(`${prefix}%`) as Array<{ id: number }>) {
+      frameIds.add(row.id);
+    }
+
+    // 2c. Archive-less SUMMARY frames for this subject. 2a is archiveUid-keyed,
+    //     so a harvested summary whose raw_archive.append failed (or a legacy
+    //     pre-#7 frame) — carrying metadata.sourceId but NO archiveUids — slips
+    //     through, leaving the distilled PII recall-able after a subject-level
+    //     DSAR. Recover it symmetric to eraseFrameComplete's fallback: match
+    //     metadata.sourceId === source_ref AND the content platform-prefix
+    //     ('[Harvest:<src>] …' server / '[<src>] …' MCP) === source. The LIKE is
+    //     a prefilter only; the two EXACT code checks are the subject identity,
+    //     so 'item' never over-erases 'item-9' and a sibling subject is safe.
+    //     Escape LIKE metacharacters in source_ref (mirroring 2b) to keep the
+    //     prefilter narrow — the exact meta.sourceId check backstops either way.
+    const srLike = sourceRef.replace(/[\\%_]/g, ch => `\\${ch}`);
+    const metaLike = raw.prepare("SELECT id, content, metadata FROM memory_frames WHERE metadata LIKE ? ESCAPE '\\'");
+    for (const row of metaLike.all(`%${srLike}%`) as Array<{ id: number; content?: string; metadata?: string }>) {
+      if (!row.metadata) continue;
+      let meta: Record<string, unknown>;
+      try { meta = JSON.parse(row.metadata) as Record<string, unknown>; } catch { continue; }
+      if (!meta || typeof meta !== 'object' || meta.sourceId !== sourceRef) continue;
+      const tok = row.content?.match(/^\[(?:Harvest:)?([^\]]+)\]/)?.[1];
+      if (tok === source) frameIds.add(row.id);
+    }
+
+    // 3. Erase the direct frame set; track what was actually deleted for the
+    //    B-frame reference sweep below.
+    const erasedIds = new Set<number>();
+    for (const fid of frameIds) {
+      const r = this.eraseFrameInternal(fid, reason);
+      if (r.framesDeleted > 0) erasedIds.add(fid);
+      add(r);
+    }
+
+    // 4. B-frame reference sweep — a synthesized B-frame references erased
+    //    frames in its content JSON and carries no archiveUids, so 2a/2b cannot
+    //    reach it. Shared with the single-frame path (see sweepReferencingBFrames).
+    add(this.sweepReferencingBFrames(erasedIds, reason));
+
+    // 5. Redact any subject archive row not reached via a frame (orphan
+    //    provenance). Already-redacted rows are idempotent no-ops (return false),
+    //    so this never double-counts rows handled in step 3.
+    for (const uid of uids) {
+      if (this.archive.erase(uid, reason)) total.archiveRedacted += 1;
+    }
+
+    return total;
   }
 }

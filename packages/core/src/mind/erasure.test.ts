@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { MindDB } from './db.js';
 import { FrameStore } from './frames.js';
 import { RawArchive, RAW_ARCHIVE_REDACTION_MARKER } from './raw-archive.js';
 import { KnowledgeGraph } from './knowledge.js';
 import { SessionStore } from './sessions.js';
 import { MindErasure, type EraseResult } from './erasure.js';
+import { SuppressionStore } from './suppression.js';
 import { rawTurnHeader, rawTurnConvKey } from '../harvest/raw-turns.js';
+import { decisionOfSubjectId } from '../harvest/decision-derivation.js';
 
 // ── Test helpers ───────────────────────────────────────────────────────────
 const DIM = 1024;
@@ -394,5 +396,123 @@ describe('FrameStore.compact — no orphaned vector/index rows', () => {
     expect(cnt(db, 'SELECT COUNT(*) c FROM memory_frames_vec WHERE rowid = ?', f.id)).toBe(0);
     expect(cnt(db, 'SELECT COUNT(*) c FROM memory_frames_fts WHERE rowid = ?', f.id)).toBe(0);
     expect(cnt(db, 'SELECT COUNT(*) c FROM memory_frame_chunks_vec WHERE rowid = ?', chunkId)).toBe(0);
+  });
+});
+
+// ── #7 P2: claude-code `decision-of` derived subject ─────────────────────────
+// claude-code harvest's extractDecisions emits a SEPARATE import item keyed on
+// stableHarvestId('claude-code','decision-of',parentId) that quotes the parent's
+// decision lines. It lands as its OWN (source, source_ref) subject — a different
+// archiveUid/raw-turn key than the parent, and it is not a B-frame — so a sweep of
+// the PARENT never reaches it: the derived frame survives erasure AND (its key being
+// un-suppressed) re-materializes on the next re-import. The persisted frame drops
+// item.metadata.extractedFrom (harvest stamps only kind/confidence/status/
+// sourceId/archiveUids), so the derived subject is reached by RECOMPUTING its key.
+describe('MindErasure.eraseBySourceRef — claude-code decision-of derived subject (#7 P2)', () => {
+  let db: MindDB;
+  let frames: FrameStore;
+  let archive: RawArchive;
+  let erasure: MindErasure;
+  let suppression: SuppressionStore;
+  beforeEach(() => {
+    db = new MindDB(':memory:');
+    new SessionStore(db).ensure('harvest', 'harvest', 'test');
+    frames = new FrameStore(db);
+    archive = new RawArchive(db);
+    erasure = new MindErasure(db);
+    suppression = new SuppressionStore(db);
+  });
+  afterEach(() => db.close());
+
+  /** Seed a harvested claude-code subject exactly as harvest.ts writes it:
+   *  a raw_archive row + a summary frame linked via archiveUids + metadata.sourceId
+   *  + the '[Harvest:claude-code] …' content prefix. Returns the frame id. */
+  function seedSubject(sourceRef: string, title: string, content: string): number {
+    const r = archive.append({ source: 'claude-code', sourceRef, content });
+    const f = frames.createIFrame('harvest', `[Harvest:claude-code] ${title}\n\n${content}`, 'normal', 'import');
+    frames.setMetadata(f.id, JSON.stringify({ sourceId: sourceRef, status: 'unreviewed', archiveUids: [r.archiveUid] }));
+    return f.id;
+  }
+
+  const PARENT_REF = 'projects/foo/.mind/decisions-2026.md';
+  const DERIVED_REF = decisionOfSubjectId(PARENT_REF);
+
+  it('erases the derived decision-of frame when the parent subject is erased', () => {
+    const parent = seedSubject(PARENT_REF, 'Decisions 2026', 'we DECIDED to ship X');
+    const derived = seedSubject(DERIVED_REF, 'Decisions from: Decisions 2026', 'we DECIDED to ship X');
+
+    const res = erasure.eraseBySourceRef('claude-code', PARENT_REF, 'dsar#42');
+
+    expect(frames.getById(parent)).toBeUndefined();    // parent (baseline)
+    expect(frames.getById(derived)).toBeUndefined();   // derived reached (the fix)
+    expect(res.framesDeleted).toBe(2);                 // parent summary + derived summary
+  });
+
+  it('suppresses the derived decision-of key so it cannot re-materialize on re-import', () => {
+    seedSubject(PARENT_REF, 'Decisions 2026', 'we DECIDED to ship X');
+    seedSubject(DERIVED_REF, 'Decisions from: Decisions 2026', 'we DECIDED to ship X');
+
+    erasure.eraseBySourceRef('claude-code', PARENT_REF, 'dsar#42');
+
+    expect(suppression.isSuppressed('claude-code', PARENT_REF)).toBe(true);   // parent (baseline)
+    expect(suppression.isSuppressed('claude-code', DERIVED_REF)).toBe(true);  // derived key (the fix)
+  });
+
+  it('does NOT record a phantom derived suppression when the parent had no decision-of frame', () => {
+    // A claude-code note with no decision derivation → no derived frame exists.
+    const plainRef = 'projects/foo/.mind/plain.md';
+    const plainDerived = decisionOfSubjectId(plainRef);
+    seedSubject(plainRef, 'Plain note', 'nothing notable here');
+
+    erasure.eraseBySourceRef('claude-code', plainRef, 'dsar');
+
+    expect(suppression.isSuppressed('claude-code', plainRef)).toBe(true);         // explicit subject recorded
+    expect(suppression.isSuppressed('claude-code', plainDerived)).toBe(false);    // no phantom derived row
+    expect(suppression.list()).toHaveLength(1);                                   // exactly one entry
+  });
+
+  it('does not attempt a decision-of cascade for a non-claude-code source', () => {
+    const r = archive.append({ source: 'claude', sourceRef: 'thread-1', content: 'x' });
+    const f = frames.createIFrame('harvest', 'summary', 'normal', 'import');
+    frames.setMetadata(f.id, JSON.stringify({ archiveUids: [r.archiveUid] }));
+
+    erasure.eraseBySourceRef('claude', 'thread-1', 'dsar');
+
+    // Only the explicit subject is suppressed — no derived 'decision-of' row for
+    // an adapter that never derives decisions.
+    expect(suppression.list().map((s) => s.sourceRef)).toEqual(['thread-1']);
+  });
+
+  // Atomicity invariant (erasure.ts preamble: "Every multi-table erasure runs in
+  // ONE better-sqlite3 transaction — a partial erasure is a compliance failure").
+  // The P2 refactor extracted the sweep into a non-transactional eraseSubjectFrames
+  // called TWICE (primary + derived) inside eraseBySourceRef's single transaction.
+  // Pin that the whole cascade is one atomic unit: a failure on the LAST write (the
+  // derived suppression.record, after the primary erase + primary record already ran
+  // in the txn) must roll back EVERYTHING — no half-erased subject, no orphan
+  // suppression row. (A released better-sqlite3 savepoint is NOT durable; the outer
+  // rollback discards it — so this also holds when eraseFrameComplete wraps this.)
+  it('rolls the whole primary+derived cascade back atomically if a later write throws', () => {
+    const parent = seedSubject(PARENT_REF, 'Decisions 2026', 'we DECIDED to ship X');
+    const derived = seedSubject(DERIVED_REF, 'Decisions from: Decisions 2026', 'we DECIDED to ship X');
+
+    // Inject a failure on the DERIVED suppression.record — the final write in the
+    // cascade, after the primary subject has already been erased + recorded inside
+    // the same transaction. Delegate the primary record to the real implementation.
+    const realRecord = SuppressionStore.prototype.record;
+    const spy = vi.spyOn(SuppressionStore.prototype, 'record').mockImplementation(function (
+      this: SuppressionStore, source: string, sourceRef: string, reason?: string,
+    ): void {
+      if (sourceRef === DERIVED_REF) throw new Error('injected mid-transaction failure on derived record');
+      realRecord.call(this, source, sourceRef, reason);
+    });
+
+    expect(() => erasure.eraseBySourceRef('claude-code', PARENT_REF, 'dsar')).toThrow('injected mid-transaction failure');
+    spy.mockRestore();
+
+    // FULL rollback — the transaction guarantee held:
+    expect(frames.getById(parent)).toBeDefined();    // primary erase rolled back
+    expect(frames.getById(derived)).toBeDefined();   // derived erase rolled back
+    expect(suppression.list()).toHaveLength(0);      // primary record rolled back too — no orphan
   });
 });

@@ -95,6 +95,20 @@ export class HarvestSourceStore {
       .run(itemsImported, framesCreated, contentHash ?? null, source);
   }
 
+  /**
+   * Clear the R3-004 unchanged-set skip hash for a source, forcing the NEXT harvest
+   * of it to run the full per-item loop instead of short-circuiting as "unchanged".
+   * Needed after GDPR re-consent (#7): lifting a subject's suppression must let an
+   * IDENTICAL re-import re-materialize it — but the set-hash skip would otherwise
+   * skip the whole run before the per-item loop ever re-adds the re-consented subject.
+   * No-op if the source row does not exist.
+   */
+  clearContentHash(source: ImportSourceType): void {
+    this.db.getDatabase()
+      .prepare('UPDATE harvest_sources SET last_content_hash = NULL WHERE source = ?')
+      .run(source);
+  }
+
   /** Enable or disable auto-sync for a source. */
   setAutoSync(source: ImportSourceType, enabled: boolean, intervalHours?: number): void {
     const raw = this.db.getDatabase();
