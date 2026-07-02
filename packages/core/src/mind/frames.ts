@@ -385,6 +385,18 @@ export class FrameStore {
     } catch {
       /* vec table may not exist */
     }
+    // Delete chunk vectors. memory_frame_chunks_vec is a vec0 virtual table with
+    // NO foreign key, so the ON DELETE CASCADE that clears memory_frame_chunks
+    // when the frame goes would ORPHAN these embedding rows (keyed by chunk id) —
+    // and search() reads memory_frame_chunks_vec first, so a stale row stays
+    // recall-able. Collect the chunk ids WHILE memory_frame_chunks still holds
+    // them, then purge their vec rows (rowid must be a SQL literal for vec0).
+    try {
+      const chunkIds = raw.prepare('SELECT id FROM memory_frame_chunks WHERE frame_id = ?').all(id) as Array<{ id: number }>;
+      for (const c of chunkIds) {
+        raw.prepare(`DELETE FROM memory_frame_chunks_vec WHERE rowid = ${Math.trunc(c.id)}`).run();
+      }
+    } catch { /* chunk tables may not exist on a pre-D1 DB */ }
     raw.prepare('DELETE FROM memory_frames_fts WHERE rowid = ?').run(id);
     try {
       raw.prepare('DELETE FROM kg_entity_frames WHERE frame_id = ?').run(id);
@@ -432,24 +444,31 @@ export class FrameStore {
   ): { temporaryPruned: number; deprecatedPruned: number; pframesMerged: number } {
     const raw = this.db.getDatabase();
     let pframesMerged = 0;
+    let temporaryPruned = 0;
+    let deprecatedPruned = 0;
 
-    const tempResult = raw
+    // Prune via delete(id), NOT a bare `DELETE FROM memory_frames`. A bare delete
+    // relies on the FK cascade, which reaches memory_frame_chunks + kg_entity_frames
+    // but NOT the vec0 virtual tables (memory_frames_vec, memory_frame_chunks_vec)
+    // or the FTS index — those have no FK, so a bare delete orphans their rows and
+    // they linger in the search index. delete() purges all of them.
+    const tempIds = raw
       .prepare(
-        `DELETE FROM memory_frames
+        `SELECT id FROM memory_frames
          WHERE importance = 'temporary'
            AND created_at < datetime('now', '-' || ? || ' days')`,
       )
-      .run(maxTempAgeDays);
-    const temporaryPruned = tempResult.changes;
+      .all(maxTempAgeDays) as Array<{ id: number }>;
+    for (const { id } of tempIds) if (this.delete(id)) temporaryPruned++;
 
-    const depResult = raw
+    const depIds = raw
       .prepare(
-        `DELETE FROM memory_frames
+        `SELECT id FROM memory_frames
          WHERE importance = 'deprecated'
            AND created_at < datetime('now', '-' || ? || ' days')`,
       )
-      .run(maxDeprecatedAgeDays);
-    const deprecatedPruned = depResult.changes;
+      .all(maxDeprecatedAgeDays) as Array<{ id: number }>;
+    for (const { id } of depIds) if (this.delete(id)) deprecatedPruned++;
 
     const gopsWithManyPframes = raw
       .prepare(
