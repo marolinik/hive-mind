@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@hive-mind/enrichment": "0.4.0",
-    "express": "^4.21.0",
+    "express": "^5.2.1",
     "marked": "^14.1.4"
   },
   "engines": {
