@@ -1,6 +1,6 @@
 {
   "name": "@hive-mind/enrichment",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "In-loop memory enrichment: synth-queue, contradiction-detector, decision-archaeology, failure-recall, cross-project-recall, prompt-composer.",
   "license": "Apache-2.0",
   "type": "module",

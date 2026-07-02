@@ -1,6 +1,6 @@
 {
   "name": "@hive-mind/core",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Memory substrate: FrameStore, HybridSearch, KnowledgeGraph, IdentityLayer, AwarenessLayer, harvest pipeline",
   "license": "Apache-2.0",
   "type": "module",
