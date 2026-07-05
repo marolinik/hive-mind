@@ -19,6 +19,14 @@ export interface MultiMindCacheConfig {
 interface CacheEntry {
   db: MindDB;
   lastAccessed: number;
+  /**
+   * Session-lifetime refcount. Incremented by `acquire()` when a workspace
+   * session borrows the handle, decremented by `release()` on session close.
+   * `evictLRU` never closes an entry with `pins > 0` — a pinned mind is in use
+   * by a live session that may write to it across an LLM await, and closing it
+   * mid-turn caused the swallowed "database connection is not open" flake.
+   */
+  pins: number;
 }
 
 /**
@@ -39,9 +47,18 @@ export class MultiMindCache {
 
   getOrOpen(workspaceId: string): MindDB | null {
     const existing = this.cache.get(workspaceId);
+    let carriedPins = 0;
     if (existing) {
-      existing.lastAccessed = Date.now();
-      return existing.db;
+      // Reopen-guard: normally hand back the cached handle. But if it was closed
+      // out-of-band (an explicit close() seam ran while a session still held a
+      // reference), drop the dead entry and reopen below — carrying the pin count
+      // forward so an in-use mind stays eviction-protected after the reopen.
+      if (existing.db.isOpen()) {
+        existing.lastAccessed = Date.now();
+        return existing.db;
+      }
+      carriedPins = existing.pins;
+      this.cache.delete(workspaceId);
     }
 
     const mindPath = this.getMindPath(workspaceId);
@@ -68,12 +85,12 @@ export class MultiMindCache {
         this.evictLRU();
       }
       const recheck = this.cache.get(workspaceId);
-      if (recheck) {
+      if (recheck && recheck.db.isOpen()) {
         recheck.lastAccessed = Date.now();
         return recheck.db;
       }
       const db = new MindDB(mindPath);
-      this.cache.set(workspaceId, { db, lastAccessed: Date.now() });
+      this.cache.set(workspaceId, { db, lastAccessed: Date.now(), pins: carriedPins });
       return db;
     } catch (err) {
       log.warn('failed to open MindDB', { workspaceId, error: err instanceof Error ? err.message : String(err) });
@@ -88,6 +105,32 @@ export class MultiMindCache {
       return entry.db;
     }
     return null;
+  }
+
+  /**
+   * Borrow a MindDB handle for the lifetime of a workspace session and pin it
+   * so `evictLRU` cannot close it while the session is live. The cache remains
+   * the sole owner of the handle — the borrower must NOT call `.close()` on it;
+   * it calls `release()` exactly once when the session closes. Throws if the
+   * mind cannot be opened (callers pre-check via `getOrOpen`, so this is the
+   * unreachable-path guard, not a normal control-flow branch).
+   */
+  acquire(workspaceId: string): MindDB {
+    const db = this.getOrOpen(workspaceId);
+    if (!db) throw new Error(`MultiMindCache.acquire: cannot open mind for workspace '${workspaceId}'`);
+    const entry = this.cache.get(workspaceId);
+    if (entry) entry.pins += 1;
+    return db;
+  }
+
+  /**
+   * Release a session's pin on a workspace mind. Floors at 0 so a stray extra
+   * release (e.g. a failed session create that never actually pinned) can never
+   * drive the refcount negative and wrongly un-pin a still-live session.
+   */
+  release(workspaceId: string): void {
+    const entry = this.cache.get(workspaceId);
+    if (entry && entry.pins > 0) entry.pins -= 1;
   }
 
   has(workspaceId: string): boolean {
@@ -121,6 +164,7 @@ export class MultiMindCache {
     let oldestKey: string | null = null;
     let oldestTime = Infinity;
     for (const [key, entry] of this.cache) {
+      if (entry.pins > 0) continue; // never evict a mind pinned by a live session
       if (entry.lastAccessed < oldestTime) {
         oldestTime = entry.lastAccessed;
         oldestKey = key;
@@ -128,6 +172,15 @@ export class MultiMindCache {
     }
     if (oldestKey) {
       this.close(oldestKey);
+    } else {
+      // Every open mind is pinned by an active session. Closing one would poison
+      // an in-flight chat turn, so we accept exceeding the soft cap instead
+      // (correctness over the maxOpen limit). The map shrinks again as sessions
+      // release their pins.
+      log.warn('evictLRU: all cached minds pinned by active sessions — exceeding maxOpen', {
+        size: this.cache.size,
+        maxOpen: this.maxOpen,
+      });
     }
   }
 }
