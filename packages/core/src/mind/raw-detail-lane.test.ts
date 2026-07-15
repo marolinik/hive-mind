@@ -142,4 +142,20 @@ describe('fetchRawDetailLane', () => {
     expect(hits).toHaveLength(1);
     expect(hits[0].conv).toBe('conv-f');
   });
+
+  it('pools Cyrillic raw turns via FTS (S1 Unicode sanitizer)', async () => {
+    seedConv('conv-cy', [
+      'разговор о логистици и плановима',
+      'видели смо слику заласка сунца у Београду',
+      'посета музеју је била сјајна',
+    ]);
+    const hits = await fetchRawDetailLane(
+      db.getDatabase(),
+      'слику Београду',
+      markerReranker(['слику']),
+      { k: 1 },
+    );
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.some(h => rawTurnBody(h.content).includes('слику'))).toBe(true);
+  });
 });

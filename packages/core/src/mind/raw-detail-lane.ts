@@ -24,6 +24,7 @@
 
 import type { Database as DatabaseType } from 'better-sqlite3';
 import type { Reranker } from './inprocess-reranker.js';
+import { buildFtsOrQuery } from './fts-sanitize.js';
 import { MIND_RAWTURN_PREFIX, parseRawTurnHeader } from '../harvest/raw-turns.js';
 
 /** CE survivors kept before neighbor expansion (benchmark RAWDETAIL_K). */
@@ -59,29 +60,10 @@ export function rawTurnBody(content: string): string {
   return nl >= 0 ? content.slice(nl + 1).trim() : content;
 }
 
-/** FTS5 OR-query sanitizer — mirrors HybridSearch.keywordSearch (W3.6). */
-const FTS_STOP_WORDS = new Set([
-  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-  'should', 'may', 'might', 'shall', 'can', 'to', 'of', 'in', 'for',
-  'on', 'with', 'at', 'by', 'from', 'as', 'into', 'about', 'this',
-  'that', 'these', 'those', 'it', 'its', 'my', 'your', 'our', 'their',
-  'what', 'which', 'who', 'whom', 'how', 'when', 'where', 'why', 'all',
-  'each', 'every', 'both', 'some', 'any', 'no', 'not', 'and', 'or', 'but',
-]);
-
-function ftsOrQuery(query: string): string {
-  return query
-    .split(/\s+/)
-    .map(w => w.replace(/[^\w]/g, ''))
-    .filter(w => w.length > 2 && !FTS_STOP_WORDS.has(w.toLowerCase()))
-    .map(w => `"${w}"`)
-    .join(' OR ');
-}
-
-/** FTS BM25 top-N restricted to raw-turn frames. Returns [] on FTS parse errors. */
+/** FTS BM25 top-N restricted to raw-turn frames. Returns [] on FTS parse errors.
+ *  OR-query sanitizer shared with HybridSearch.keywordSearch (S1, fts-sanitize.ts). */
 function ftsPool(db: DatabaseType, query: string, limit: number): FrameRow[] {
-  const match = ftsOrQuery(query);
+  const match = buildFtsOrQuery(query);
   if (!match) return [];
   try {
     return db.prepare(

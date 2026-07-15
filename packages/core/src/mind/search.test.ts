@@ -74,6 +74,51 @@ describe('HybridSearch', () => {
     expect(ids).toEqual([]);
   });
 
+  describe('Unicode keyword search (S1)', () => {
+    function seedUnicodeFrames() {
+      const cyrillic = frames.createIFrame('gop-a', 'Београд конференција о вештачкој интелигенцији');
+      const diacritic = frames.createIFrame('gop-a', 'Sastanak sa Đorđem u Čačku povodom žurke');
+      const cjk = frames.createIFrame('gop-a', '我们讨论了北京旅行的计划');
+      const english = frames.createIFrame('gop-a', 'Quarterly planning meeting notes');
+      return { cyrillic, diacritic, cjk, english };
+    }
+
+    it('matches Cyrillic frames via the keyword lane', async () => {
+      const { cyrillic } = seedUnicodeFrames();
+      const results = await search.keywordSearch('Београд', 10);
+      expect(results).toContain(cyrillic.id);
+    });
+
+    it('matches diacritic (č/ž) query terms', async () => {
+      const { diacritic } = seedUnicodeFrames();
+      const results = await search.keywordSearch('Čačku žurke', 10);
+      expect(results).toContain(diacritic.id);
+    });
+
+    it('routes pure-CJK queries to the LIKE fallback and matches', async () => {
+      const { cjk } = seedUnicodeFrames();
+      // buildFtsOrQuery drops CJK tokens (unicode61 cannot segment them), so the
+      // MATCH string is empty — keywordSearch must fall back to LIKE substring
+      // matching instead of returning [].
+      const results = await search.keywordSearch('北京旅行', 10);
+      expect(results).toContain(cjk.id);
+    });
+
+    it('still returns [] for stop-word-only English queries (regression lock)', async () => {
+      seedUnicodeFrames();
+      const results = await search.keywordSearch('the a an of to', 10);
+      expect(results).toHaveLength(0);
+    });
+
+    it('English keyword results are unchanged by the Unicode sanitizer', async () => {
+      // Byte-identical MATCH strings for ASCII input are locked in
+      // fts-sanitize.test.ts; this asserts the end-to-end lane still hits.
+      const { english } = seedUnicodeFrames();
+      const results = await search.keywordSearch('planning meeting', 10);
+      expect(results).toContain(english.id);
+    });
+  });
+
   it('indexFrame inserts into memory_frames_vec and vectorSearch retrieves it', async () => {
     const frame = frames.createIFrame('gop-a', 'quantum annealing implementation notes');
     await search.indexFrame(frame.id, frame.content);
