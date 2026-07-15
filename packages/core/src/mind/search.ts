@@ -17,6 +17,7 @@ import type { Embedder } from './embeddings.js';
 import type { MemoryFrame, Importance } from './frames.js';
 import type { Reranker } from './inprocess-reranker.js';
 import { chunkText, type ChunkOptions } from './chunker.js';
+import { buildFtsOrQuery, hasUnsegmentedScript, sanitizeFtsToken } from './fts-sanitize.js';
 import { createCoreLogger } from '../logger.js';
 import {
   computeRelevance,
@@ -319,25 +320,20 @@ export class HybridSearch {
     // punctuation, drops stop words, and quotes each remaining token. This
     // trades a small precision drop for much better recall on natural-language
     // queries (e.g. "hiring decisions this month" → `"hiring" OR "decisions" OR "month"`).
-    const FTS_STOP_WORDS = new Set([
-      'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-      'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-      'should', 'may', 'might', 'shall', 'can', 'to', 'of', 'in', 'for',
-      'on', 'with', 'at', 'by', 'from', 'as', 'into', 'about', 'this',
-      'that', 'these', 'those', 'it', 'its', 'my', 'your', 'our', 'their',
-      'what', 'which', 'who', 'whom', 'how', 'when', 'where', 'why', 'all',
-      'each', 'every', 'both', 'some', 'any', 'no', 'not', 'and', 'or', 'but',
-    ]);
+    // S1: sanitizer unified in fts-sanitize.ts, Unicode-aware (Cyrillic and
+    // diacritic terms survive; ASCII output is byte-identical to before).
     const safeQuery = query.includes('"')
       ? query // already quoted by caller
-      : query
-          .split(/\s+/)
-          .map((w) => w.replace(/[^\w]/g, ''))
-          .filter((w) => w.length > 2 && !FTS_STOP_WORDS.has(w.toLowerCase()))
-          .map((w) => `"${w.replace(/"/g, '')}"`)
-          .join(' OR ');
+      : buildFtsOrQuery(query);
 
-    if (!safeQuery) return [];
+    if (!safeQuery) {
+      // Empty MATCH string. For ASCII queries that means stop words / short
+      // tokens only — keep returning [] (regression lock). For queries in an
+      // unsegmented script (CJK) the emptiness is a sanitizer artifact, not a
+      // lack of signal: unicode61 cannot token-match CJK prose, but LIKE
+      // substring matching can, so route those to the fallback lane.
+      return hasUnsegmentedScript(query) ? this.likeFallbackSearch(query, limit, gopId) : [];
+    }
 
     let sql: string;
     let params: unknown[];
@@ -390,7 +386,7 @@ export class HybridSearch {
 
     const tokens = query
       .split(/\s+/)
-      .map((w) => w.replace(/[^\w]/g, '')) // strip punctuation (incl. FTS5 operators)
+      .map(sanitizeFtsToken) // strip punctuation (incl. FTS5 operators), Unicode-aware
       .filter((w) => w.length > 0);
     const terms = (tokens.length > 0 ? tokens : [query]).map((t) => `%${escapeLikeTerm(t)}%`);
 
