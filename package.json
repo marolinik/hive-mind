@@ -45,15 +45,15 @@
     "semantic-search"
   ],
   "devDependencies": {
-    "@changesets/cli": "^2.31.0",
+    "@changesets/cli": "^2.31.1",
     "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^25.9.1",
-    "@vitest/coverage-v8": "^4.1.8",
-    "eslint": "^10.6.0",
-    "globals": "^17.7.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^10.8.0",
+    "globals": "^17.8.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.1",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.8"
   }
 }
