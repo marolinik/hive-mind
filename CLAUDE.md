@@ -143,6 +143,6 @@ const search = new HybridSearch(db);
 const graph = new KnowledgeGraph(db);
 ```
 
-### Sync to Waggle OS
+### Relationship to Waggle OS
 
-`packages/cli/**` and `core` sync **upstream** to Waggle OS — keep them portable and free of host-specific assumptions (no hardcoded absolute paths). See `EXTRACTION.md` for the extraction boundary and what stays proprietary in Waggle OS (compliance layer, agent runtime/personas, self-evolution, encrypted vault, tier/billing, Tauri shell, multi-agent coordination). CI: `.github/workflows/ci.yml` (build + test + lint + typecheck) and `sync-to-waggle-os.yml`.
+The private Waggle OS monorepo is the source of truth for the memory substrate; this repository is a maintainer-curated public distribution. There is no automatic or bidirectional sync. Keep contributions portable and free of host-specific assumptions. Maintainers port accepted public changes into Waggle OS first, then prepare a reviewed public forward-port that adapts layout and strips Waggle-only code. See `.github/sync.md` for the publication policy. CI: `.github/workflows/ci.yml` (build + test + lint + typecheck).

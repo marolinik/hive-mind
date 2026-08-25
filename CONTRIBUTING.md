@@ -92,6 +92,16 @@ Accepted types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`,
   templates under `.github/ISSUE_TEMPLATE/`.
 - Confirm `npm test`, `npm run lint`, and `npm run typecheck` all pass.
 
+## Relationship to Waggle OS
+
+This public repository accepts normal community pull requests, but it is not
+an automated upstream for the private Waggle OS repository. Waggle OS is the
+maintainer's source of truth for the memory substrate. When a public change is
+accepted, maintainers port and verify it there before including it in a later
+curated public forward-port. Contributors do not need private-repository access.
+
+See [`.github/sync.md`](.github/sync.md) for the publication and review policy.
+
 ## Code style
 
 - **TypeScript** throughout; keep public surfaces typed and avoid `any`
