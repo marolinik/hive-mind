@@ -14,6 +14,11 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # sanitize-html >=2.17.6 requires Node >=22.12; runtime packages still support Node 20.
+    ignore:
+      - dependency-name: "sanitize-html"
+        versions:
+          - ">=2.17.6"
 
   - package-ecosystem: "github-actions"
     directory: "/"

@@ -178,9 +178,14 @@ describe('FrameStore', () => {
     // identical frame buried deeper silently re-inserted. The content_hash index
     // makes dedup global. This is the key regression for the scan→index swap.
     const original = frames.createIFrame('gop-test', 'needle in a haystack');
-    for (let i = 0; i < 600; i++) {
-      frames.createIFrame('gop-test', `filler content number ${i}`);
-    }
+    const createFillers = db.getDatabase().transaction(() => {
+      // Exactly 500 newer rows are sufficient to exclude the original from
+      // the legacy LIMIT 500 scan while keeping this regression fast on CI.
+      for (let i = 0; i < 500; i++) {
+        frames.createIFrame('gop-test', `filler content number ${i}`);
+      }
+    });
+    createFillers();
     const redup = frames.createIFrame('gop-test', 'needle in a haystack');
     expect(redup.id).toBe(original.id);
   });
