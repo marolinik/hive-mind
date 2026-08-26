@@ -23,7 +23,7 @@
     "clean": "tsc --build --clean"
   },
   "dependencies": {
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "^13.0.3",
     "sqlite-vec": "^0.1.7-alpha.2",
     "undici": "^6.28.0"
   },
