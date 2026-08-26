@@ -1,5 +1,6 @@
 import { layout, escapeHtml } from './layout.js';
 import { Marked } from 'marked';
+import sanitizeHtml from 'sanitize-html';
 
 /**
  * Render a single compiled wiki page. The MCP get_page response shape is
@@ -16,23 +17,50 @@ function pickField(obj, ...keys) {
   return '';
 }
 
-// Markdown rendering via marked. The wiki content is generated locally by
-// `claude -p` on the user's machine and served over localhost only, so the
-// XSS surface is "claude -p output gets prompt-injected by harvested
-// content into echoing a <script> tag." We mitigate by:
-//   1. Disabling raw HTML passthrough — marked escapes <tag> by default
-//      when we don't override the renderer for raw HTML blocks.
-//   2. Single-user / localhost — no cross-origin attack surface.
-// gfm: true gives us tables, autolinks, fenced code blocks, strikethrough.
+// The synthesized body is influenced by harvested content, so Marked output
+// is untrusted even though generation happens locally. Marked intentionally
+// preserves raw HTML and unsafe URL schemes; sanitize the complete rendered
+// fragment before it reaches the page template.
 const md = new Marked({
   gfm: true,
   breaks: false,
   pedantic: false,
 });
 
-function bodyToHtml(body) {
+const MARKDOWN_SANITIZE_OPTIONS = {
+  allowedTags: [
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'p', 'br', 'hr', 'blockquote', 'pre', 'code',
+    'ul', 'ol', 'li', 'strong', 'em', 'del',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'a', 'img', 'input',
+  ],
+  allowedAttributes: {
+    a: ['href', 'title'],
+    img: ['src', 'alt', 'title'],
+    code: ['class'],
+    th: ['align'],
+    td: ['align'],
+    ol: ['start'],
+    input: ['checked', 'disabled', 'type'],
+  },
+  allowedClasses: {
+    code: [/^language-[a-z0-9_-]+$/i],
+  },
+  allowedSchemes: ['http', 'https', 'mailto'],
+  allowedSchemesByTag: {
+    a: ['http', 'https', 'mailto'],
+    img: ['http', 'https'],
+  },
+  allowedSchemesAppliedToAttributes: ['href', 'src'],
+  allowProtocolRelative: false,
+  disallowedTagsMode: 'discard',
+  enforceHtmlBoundary: true,
+};
+
+export function bodyToHtml(body) {
   if (!body) return '<p class="muted">empty</p>';
-  return md.parse(body);
+  return sanitizeHtml(md.parse(body), MARKDOWN_SANITIZE_OPTIONS);
 }
 
 /**
