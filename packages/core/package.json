@@ -24,7 +24,8 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
-    "sqlite-vec": "^0.1.7-alpha.2"
+    "sqlite-vec": "^0.1.7-alpha.2",
+    "undici": "^6.28.0"
   },
   "peerDependencies": {
     "@huggingface/transformers": "^3.8.1",
