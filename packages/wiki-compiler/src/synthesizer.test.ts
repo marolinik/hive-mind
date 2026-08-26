@@ -1,11 +1,38 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveSynthesizer } from './synthesizer.js';
 
+const anthropicMock = vi.hoisted(() => ({
+  constructorOptions: undefined as unknown,
+  request: undefined as unknown,
+}));
+
+vi.mock('@anthropic-ai/sdk', () => ({
+  default: class MockAnthropic {
+    messages = {
+      create: async (request: unknown) => {
+        anthropicMock.request = request;
+        return {
+          content: [
+            { type: 'tool_use', id: 'tool_1', name: 'noop', input: {} },
+            { type: 'text', text: 'summary' },
+          ],
+        };
+      },
+    };
+
+    constructor(options: unknown) {
+      anthropicMock.constructorOptions = options;
+    }
+  },
+}));
+
 describe('resolveSynthesizer', () => {
   const envBackup: Record<string, string | undefined> = {};
   const envKeys = ['ANTHROPIC_API_KEY', 'OLLAMA_URL', 'OLLAMA_MODEL'];
 
   beforeEach(() => {
+    anthropicMock.constructorOptions = undefined;
+    anthropicMock.request = undefined;
     for (const k of envKeys) {
       envBackup[k] = process.env[k];
       delete process.env[k];
@@ -41,6 +68,24 @@ describe('resolveSynthesizer', () => {
     const resolver = await resolveSynthesizer({ anthropicModel: 'claude-opus-override' });
     expect(resolver.provider).toBe('anthropic');
     expect(resolver.model).toBe('claude-opus-override');
+  });
+
+  it('sends the supported Anthropic request and returns text after a tool block', async () => {
+    const resolver = await resolveSynthesizer({
+      anthropicApiKey: 'sk-test',
+      anthropicModel: 'claude-test-model',
+      maxTokens: 321,
+    });
+
+    const output = await resolver.synthesize('Summarize this memory.');
+
+    expect(anthropicMock.constructorOptions).toEqual({ apiKey: 'sk-test' });
+    expect(anthropicMock.request).toEqual({
+      model: 'claude-test-model',
+      max_tokens: 321,
+      messages: [{ role: 'user', content: 'Summarize this memory.' }],
+    });
+    expect(output).toBe('summary');
   });
 
   it('picks ollama over echo when OLLAMA_URL reports healthy', async () => {
