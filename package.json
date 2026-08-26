@@ -19,7 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "changeset": "changeset",
-    "version-packages": "changeset version",
+    "version-packages": "changeset version && npm install --package-lock-only --ignore-scripts && node scripts/verify-workspace-lock.mjs",
     "release": "npm run build && changeset publish",
     "e2e:seed": "node e2e/seed.mjs",
     "e2e:serve": "node e2e/serve.mjs",

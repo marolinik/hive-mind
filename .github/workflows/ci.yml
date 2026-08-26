@@ -5,6 +5,10 @@ on:
     branches: [master, main]
   pull_request:
     branches: [master, main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -34,6 +38,9 @@ jobs:
         run: |
           node --version
           npm --version
+
+      - name: Verify workspace lock
+        run: node scripts/verify-workspace-lock.mjs
 
       - name: Install dependencies
         run: npm ci --include=optional
