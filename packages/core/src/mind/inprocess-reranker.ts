@@ -21,6 +21,7 @@
 import path from 'node:path';
 import os from 'node:os';
 import { createCoreLogger } from '../logger.js';
+import { withTransformersModelLoad } from './transformers-model-load.js';
 
 const log = createCoreLogger('inprocess-reranker');
 
@@ -56,18 +57,25 @@ export async function createInProcessReranker(
 
   log.info(`Loading in-process reranker: ${model} (~22MB first download)`);
 
-  const { AutoTokenizer, AutoModelForSequenceClassification, env } = await import(
+  const { AutoTokenizer, AutoModelForSequenceClassification } = await import(
     '@huggingface/transformers'
   );
-  env.cacheDir = cacheDir;
-  env.allowRemoteModels = true;
-
-  // Cross-encoders need direct tokenizer + model access — pipeline API
-  // doesn't expose the (text, text_pair) input pattern cleanly across
-  // all transformers.js versions. Calling the model directly with
-  // tokenized pairs is the stable path.
-  const tokenizer = await AutoTokenizer.from_pretrained(model);
-  const seqModel = await AutoModelForSequenceClassification.from_pretrained(model, { dtype: 'fp32' });
+  const { tokenizer, seqModel } = await withTransformersModelLoad({
+    cacheDir,
+    model,
+    load: async (canonicalCacheDir) => ({
+      // Cross-encoders need direct tokenizer + model access — pipeline API
+      // doesn't expose the (text, text_pair) input pattern cleanly across
+      // all transformers.js versions. Calling the model directly with
+      // tokenized pairs is the stable path.
+      tokenizer: await AutoTokenizer.from_pretrained(model, { cache_dir: canonicalCacheDir }),
+      seqModel: await AutoModelForSequenceClassification.from_pretrained(model, {
+        dtype: 'fp32',
+        cache_dir: canonicalCacheDir,
+      }),
+    }),
+    onQuarantine: () => log.warn(`Quarantined corrupt reranker model cache: ${model}`),
+  });
 
   log.info(`In-process reranker ready: ${model}`);
 
@@ -77,7 +85,7 @@ export async function createInProcessReranker(
       text_pair: doc,
       padding: true,
       truncation: true,
-      return_tensors: 'pt',
+      return_tensor: true,
     });
     const out = await seqModel(inputs);
     // ms-marco-MiniLM outputs a single logit per pair (1-class regression).
@@ -105,7 +113,7 @@ export async function createInProcessReranker(
         text_pair: docs,
         padding: true,
         truncation: true,
-        return_tensors: 'pt',
+        return_tensor: true,
       });
       const out = await seqModel(inputs);
       const logits = out.logits ?? out[0];
