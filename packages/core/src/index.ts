@@ -93,6 +93,15 @@ export * from './harvest/index.js';
 // tool output).
 export { scanForInjection } from './injection-scanner.js';
 export type { ScanResult } from './injection-scanner.js';
+export {
+  evaluateExternalMemoryIngress,
+  projectExternalMemoryContent,
+} from './memory-ingress-guard.js';
+export type {
+  ExternalMemoryIngressDecision,
+  ExternalMemoryIngressInput,
+  ExternalMemoryProjectionInput,
+} from './memory-ingress-guard.js';
 
 // Workspace management (Wave 5A).
 // On-disk layout: {baseDir}/workspaces/{id}/{workspace.json, workspace.mind,

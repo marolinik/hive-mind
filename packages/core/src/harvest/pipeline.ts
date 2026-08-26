@@ -18,7 +18,10 @@ import type {
 } from './types.js';
 import { CLASSIFY_PROMPT, EXTRACT_PROMPT, SYNTHESIZE_PROMPT } from './prompts.js';
 import { dedup } from './dedup.js';
-import { scanForInjection } from '../injection-scanner.js';
+import {
+  evaluateExternalMemoryIngress,
+  projectExternalMemoryContent,
+} from '../memory-ingress-guard.js';
 import { createCoreLogger } from '../logger.js';
 
 const log = createCoreLogger('harvest-pipeline');
@@ -104,26 +107,34 @@ export class HarvestPipeline {
     const errors: string[] = [];
     log.info('harvest pipeline starting', { source, itemCount: items.length, batchSize: this.batchSize, concurrency: this.concurrency });
 
-    // Pass 0: Injection scan — drop any item whose title or content carries a
-    // prompt-injection payload (role_override / prompt_extraction / instruction_injection).
+    // Pass 0: Injection scan — drop any item whose untrusted title or message
+    // text carries a prompt-injection payload. Structured conversation adapters
+    // synthesize item.content with trusted `user:` / `assistant:` labels; scan
+    // their original message text instead so those labels are not mistaken for
+    // attacker-supplied authority markers. Unstructured items still scan their
+    // complete content. The exact-serialization check prevents a partial
+    // messages projection from hiding extra attacker-controlled content.
     // Harvest ingests UNTRUSTED external exports (ChatGPT/Claude/Gemini JSON dumps,
     // Perplexity shares, URL fetches). A hostile file must not flow through to the
     // LLM passes or into memory frames.
     const originalCount = items.length;
     items = items.filter((item) => {
-      // Scan title + first 4KB of content — enough to catch payloads hidden in either field.
-      // Using 'tool_output' context since imports are external data, weighted like tool output.
-      const probe = `${item.title ?? ''}\n${(item.content ?? '').slice(0, 4000)}`;
-      const scan = scanForInjection(probe, 'tool_output');
-      if (!scan.safe) {
-        const reason = scan.flags.join(',');
+      const untrustedContent = projectExternalMemoryContent({
+        content: item.content ?? '',
+        messages: item.messages,
+        parseMethod: item.metadata?.parseMethod,
+      });
+      const decision = evaluateExternalMemoryIngress({
+        title: item.title,
+        content: untrustedContent,
+      });
+      if (decision.action === 'block') {
         log.warn('dropping harvest item with injection payload', {
-          itemId: item.id,
-          title: item.title?.slice(0, 80),
-          flags: scan.flags,
-          score: scan.score,
+          itemId: String(item.id).slice(0, 80),
+          flags: decision.scan.flags,
+          score: decision.scan.score,
         });
-        errors.push(`Blocked item "${item.title?.slice(0, 40) ?? item.id}" — injection detected (${reason})`);
+        errors.push('Blocked imported item due to unsafe content.');
         return false;
       }
       return true;
