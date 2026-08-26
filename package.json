@@ -45,7 +45,7 @@
     "semantic-search"
   ],
   "devDependencies": {
-    "@changesets/cli": "^2.31.0",
+    "@changesets/cli": "^3.0.1",
     "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^25.9.1",
@@ -54,6 +54,7 @@
     "globals": "^17.7.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.62.1",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "yaml": "^2.8.1"
   }
 }
