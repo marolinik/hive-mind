@@ -80,6 +80,7 @@ const expectedPublishSteps = {
         script: 'npm run version-packages',
         'commit-message': 'chore(release): version packages',
         'pr-title': 'chore(release): version packages',
+        'push-with-git-cli': true,
       },
     },
   ],
