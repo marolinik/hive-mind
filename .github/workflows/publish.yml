@@ -38,6 +38,9 @@ jobs:
       - name: Verify bundled npm
         run: test "$(npm --version)" = "11.12.1"
 
+      - name: Verify workspace lock
+        run: node scripts/verify-workspace-lock.mjs
+
       - name: Install dependencies
         run: npm ci --include=optional
 
@@ -71,6 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      actions: write
       contents: write
       pull-requests: write
     steps:
@@ -93,13 +97,21 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Version packages
+        id: version
         uses: changesets/action/version@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
         with:
           github-token: ${{ github.token }}
           script: npm run version-packages
           commit-message: "chore(release): version packages"
           pr-title: "chore(release): version packages"
+          pr-draft: always
           push-with-git-cli: true
+
+      - name: Dispatch exact version-branch CI
+        if: steps.version.outputs.pr-number != ''
+        run: gh workflow run ci.yml --ref changeset-release/master
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   publish:
     name: Publish approved package artifacts
