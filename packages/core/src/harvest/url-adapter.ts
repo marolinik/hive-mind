@@ -4,22 +4,18 @@
  *
  * The synchronous `parse()` entry point accepts pre-fetched HTML strings
  * — use this when the caller already has the page body (e.g. from an
- * existing crawler). `fetchAndParse(url)` pulls the page via the built-in
- * `fetch` with a 15s timeout and a descriptive User-Agent.
+ * existing crawler). `fetchAndParse(url)` uses a DNS-pinned egress guard,
+ * a 15s timeout, and a descriptive User-Agent.
  *
  * HTML cleanup uses tag-aware stripping (drops script/style/nav/footer/
  * header entirely, converts headings to markdown-style) rather than a
  * naive tag regex, so the resulting plain text preserves document
  * structure well enough for heading-based splitting below.
- *
- * Extracted from Waggle OS `packages/core/src/harvest/url-adapter.ts`.
- * Scrub: User-Agent rebranded `Waggle-Memory/1.0` → `Hive-Mind/1.0` so
- * server logs of hive-mind consumers don't falsely attribute traffic to
- * Waggle OS.
  */
 
 import { randomUUID } from 'node:crypto';
 import type { SourceAdapter, UniversalImportItem } from './types.js';
+import { allowLocalFromEnv, safeFetch } from './url-egress-guard.js';
 
 /** Strip HTML tags and decode common entities. Returns plain text. */
 function stripHtml(html: string): string {
@@ -84,15 +80,22 @@ export class UrlAdapter implements SourceAdapter {
     return [];
   }
 
-  /** Fetch a URL and parse its content. Async because of network I/O. */
+  /**
+   * Fetch a URL and parse its content through the SSRF guard. Loopback is
+   * available only when HIVE_MIND_ALLOW_LOCAL_FETCH is explicitly enabled.
+   */
   async fetchAndParse(url: string): Promise<UniversalImportItem[]> {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Hive-Mind/1.0 (knowledge harvester)',
-        Accept: 'text/html,application/xhtml+xml,text/plain',
+    const response = await safeFetch(
+      url,
+      {
+        headers: {
+          'User-Agent': 'Hive-Mind/1.0 (knowledge harvester)',
+          Accept: 'text/html,application/xhtml+xml,text/plain',
+        },
+        signal: AbortSignal.timeout(15_000),
       },
-      signal: AbortSignal.timeout(15_000),
-    });
+      { allowLocal: allowLocalFromEnv() },
+    );
 
     if (!response.ok) {
       throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
