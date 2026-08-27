@@ -137,4 +137,11 @@ describe('harvestSetHash', () => {
     const y = { id: '1', title: 'C', content: 'T' };
     expect(harvestSetHash([x])).not.toBe(harvestSetHash([y]));
   });
+
+  it('does not collide when field boundaries contain spaces', () => {
+    const compact = { id: 'a', title: 'b', content: 'c' };
+    const shifted = { id: 'a b', title: 'c', content: '' };
+
+    expect(harvestSetHash([compact])).not.toBe(harvestSetHash([shifted]));
+  });
 });

@@ -40,9 +40,9 @@ export function harvestSetHash(
   items: ReadonlyArray<{ id?: string; title?: string; content?: string }>,
 ): string {
   const perItem = items
-    .map((it) => contentHash(`${it.id ?? ''} ${it.title ?? ''} ${it.content ?? ''}`))
+    .map((it) => contentHash(`${it.id ?? ''}\0${it.title ?? ''}\0${it.content ?? ''}`))
     .sort();
-  return createHash('sha256').update(perItem.join('')).digest('hex').slice(0, 32);
+  return createHash('sha256').update(perItem.join('\x01')).digest('hex').slice(0, 32);
 }
 
 /** Simple cosine-style similarity on character trigrams. */
