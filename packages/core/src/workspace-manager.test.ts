@@ -1,7 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  existsSync,
+  linkSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import path, { join } from 'node:path';
 import { WorkspaceManager } from './workspace-manager.js';
 
 describe('WorkspaceManager', () => {
@@ -15,6 +25,28 @@ describe('WorkspaceManager', () => {
 
   afterEach(() => {
     try { rmSync(baseDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('rejects a pre-existing workspaces junction outside the data directory', () => {
+    const root = join(baseDir, 'workspaces');
+    const outside = mkdtempSync(join(tmpdir(), 'hmind-wm-outside-'));
+    rmSync(root, { recursive: true, force: true });
+    symlinkSync(outside, root, process.platform === 'win32' ? 'junction' : 'dir');
+    try {
+      expect(() => new WorkspaceManager(baseDir)).toThrow(/workspace root/i);
+    } finally {
+      unlinkSync(root);
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an exact-parent canonical relation from the path resolver', () => {
+    const relative = vi.spyOn(path, 'relative').mockReturnValueOnce('..');
+    try {
+      expect(() => new WorkspaceManager(baseDir)).toThrow(/workspace root/i);
+    } finally {
+      relative.mockRestore();
+    }
   });
 
   it('create() lays out the workspace dir with config, mind file, and sessions/', () => {
@@ -52,6 +84,22 @@ describe('WorkspaceManager', () => {
     expect(wm.listGroups().sort()).toEqual(['Personal', 'Work']);
   });
 
+  it('list() omits hard-linked or identity-mismatched workspace configs', () => {
+    const linked = wm.create({ name: 'Linked', group: 'Work' });
+    const linkedPath = join(baseDir, 'workspaces', linked.id, 'workspace.json');
+    const outside = join(baseDir, 'outside.json');
+    writeFileSync(outside, JSON.stringify({ ...linked, name: 'OUTSIDE-SECRET' }));
+    unlinkSync(linkedPath);
+    linkSync(outside, linkedPath);
+
+    const mismatched = wm.create({ name: 'Mismatched', group: 'Work' });
+    const mismatchedPath = join(baseDir, 'workspaces', mismatched.id, 'workspace.json');
+    writeFileSync(mismatchedPath, JSON.stringify({ ...mismatched, id: 'different' }));
+
+    expect(wm.list().map((workspace) => workspace.id)).toEqual([]);
+    expect(readFileSync(outside, 'utf8')).toContain('OUTSIDE-SECRET');
+  });
+
   it('get() returns null for unknown id and config for known id', () => {
     expect(wm.get('nope')).toBeNull();
     const ws = wm.create({ name: 'Alpha', group: 'Personal', model: 'claude-sonnet' });
@@ -79,6 +127,23 @@ describe('WorkspaceManager', () => {
     wm.delete(ws.id);
     expect(wm.get(ws.id)).toBeNull();
     expect(existsSync(join(baseDir, 'workspaces', ws.id))).toBe(false);
+  });
+
+  it.each(['', '.', '..', '../escape', 'nested/escape', 'nested\\escape', 'C:\\escape'])(
+    'rejects unsafe delete id %j without removing the workspace root',
+    (id) => {
+      const sentinel = join(baseDir, 'sentinel.txt');
+      writeFileSync(sentinel, 'preserve');
+      expect(() => wm.delete(id)).toThrow(/invalid workspace id/i);
+      expect(readFileSync(sentinel, 'utf8')).toBe('preserve');
+      expect(lstatSync(join(baseDir, 'workspaces')).isDirectory()).toBe(true);
+    },
+  );
+
+  it('ensure() rejects traversal before creating outside the workspace root', () => {
+    const outside = join(baseDir, 'escape');
+    expect(() => wm.ensure('../escape')).toThrow(/invalid workspace id/i);
+    expect(existsSync(outside)).toBe(false);
   });
 
   it('getMindPath() returns the canonical per-workspace .mind path', () => {

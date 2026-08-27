@@ -18,6 +18,7 @@ import path from 'node:path';
 import os from 'node:os';
 import type { Embedder } from './embeddings.js';
 import { createCoreLogger } from '../logger.js';
+import { withTransformersModelLoad } from './transformers-model-load.js';
 
 const log = createCoreLogger('inprocess-embedder');
 
@@ -46,11 +47,16 @@ export async function createInProcessEmbedder(config?: Partial<InProcessEmbedder
   // Dynamic import keeps @huggingface/transformers as an optional peer dep.
   // Consumers who do not install it will trip this line and the factory
   // will catch the failure and move to the next provider in the chain.
-  const { pipeline, env } = await import('@huggingface/transformers');
-  env.cacheDir = cacheDir;
-  env.allowRemoteModels = true;
-
-  const extractor = await pipeline('feature-extraction', model, { dtype: 'fp32' });
+  const { pipeline } = await import('@huggingface/transformers');
+  const extractor = await withTransformersModelLoad({
+    cacheDir,
+    model,
+    load: (canonicalCacheDir) => pipeline('feature-extraction', model, {
+      dtype: 'fp32',
+      cache_dir: canonicalCacheDir,
+    }),
+    onQuarantine: () => log.warn(`Quarantined corrupt embedding model cache: ${model}`),
+  });
   const nativeDims = 384;
 
   log.info(`In-process embedder ready (${nativeDims} native dims → ${targetDims} normalized)`);

@@ -73,7 +73,6 @@ export function readArchiveUids(meta: Record<string, unknown>): string[] {
 export function withArchiveUid(meta: Record<string, unknown>, uid: string): Record<string, unknown> {
   const uids = new Set(readArchiveUids(meta));
   uids.add(uid);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { archiveUid: _legacy, ...rest } = meta;
   return { ...rest, archiveUids: [...uids] };
 }
