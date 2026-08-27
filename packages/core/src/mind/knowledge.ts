@@ -67,6 +67,16 @@ export class KnowledgeGraph {
     this.db = db;
   }
 
+  /** Run a graph write unit atomically, nesting as a savepoint when needed. */
+  runInTransaction<T>(fn: () => T): T {
+    if (typeof fn !== 'function') {
+      throw new TypeError('KnowledgeGraph.runInTransaction requires a function');
+    }
+    const raw = this.db.getDatabase();
+    const transaction = raw.transaction(fn);
+    return raw.inTransaction ? transaction() : transaction.immediate();
+  }
+
   setValidationSchema(schema: ValidationSchema): void {
     this.schema = schema;
   }
@@ -446,11 +456,16 @@ export class KnowledgeGraph {
   /** Link an entity to a frame it was extracted from (kg_entity_frames bridge).
    *  Powers the 'contextual' scoring signal. Idempotent per (entity, frame). */
   linkEntityToFrame(entityId: number, frameId: number): void {
-    try {
-      this.db.getDatabase().prepare(
-        'INSERT OR IGNORE INTO kg_entity_frames (entity_id, frame_id) VALUES (?, ?)',
-      ).run(entityId, frameId);
-    } catch { /* bridge table absent on a pre-migration DB — best-effort */ }
+    try { this.linkEntityToFrameStrict(entityId, frameId); } catch {
+      /* bridge table absent on a pre-migration DB — best-effort */
+    }
+  }
+
+  /** Strict provenance link for atomic writers; true only for a new link. */
+  linkEntityToFrameStrict(entityId: number, frameId: number): boolean {
+    return this.db.getDatabase().prepare(
+      'INSERT OR IGNORE INTO kg_entity_frames (entity_id, frame_id) VALUES (?, ?)',
+    ).run(entityId, frameId).changes === 1;
   }
 
   /** Seed entities whose name appears in free text (case-insensitive, name ≥3

@@ -25,7 +25,8 @@
  */
 
 import { spawn } from 'node:child_process';
-import { isNoiseName } from './entity-normalizer.js';
+import { evaluateExternalMemoryIngress } from '../memory-ingress-guard.js';
+import { isNoiseName, normalizeEntityName } from './entity-normalizer.js';
 
 /** Canonical entity types the prompt asks the model to choose from. */
 export const LLM_ENTITY_TYPES = [
@@ -152,6 +153,7 @@ function unwrapFencedBlock(text: string): string {
  */
 function parseJsonlOutput(raw: string, validFrameIds: Set<number>): ExtractedEntity[] {
   const entities: ExtractedEntity[] = [];
+  const seenEntityFrames = new Set<string>();
   const cleaned = unwrapFencedBlock(raw);
 
   for (const line of cleaned.split('\n')) {
@@ -160,13 +162,16 @@ function parseJsonlOutput(raw: string, validFrameIds: Set<number>): ExtractedEnt
 
     let parsed: Record<string, unknown>;
     try {
-      parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      const value: unknown = JSON.parse(trimmed);
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      parsed = value as Record<string, unknown>;
     } catch {
       continue;
     }
 
-    const frameId = Number(parsed.frame_id);
-    if (!Number.isFinite(frameId) || !validFrameIds.has(frameId)) continue;
+    const frameId = parsed.frame_id;
+    if (typeof frameId !== 'number' || !Number.isSafeInteger(frameId) ||
+        !validFrameIds.has(frameId)) continue;
 
     const name = typeof parsed.name === 'string' ? parsed.name.trim() : '';
     if (name.length < 2) continue;
@@ -174,11 +179,15 @@ function parseJsonlOutput(raw: string, validFrameIds: Set<number>): ExtractedEnt
     // sub-4-char non-allowlisted) so the LLM path can't leak noise into the
     // graph the way the soft prompt instruction sometimes did.
     if (isNoiseName(name)) continue;
+    if (evaluateExternalMemoryIngress({ content: name }).action !== 'allow') continue;
 
-    const rawType = typeof parsed.type === 'string' ? parsed.type.toLowerCase().trim() : 'concept';
-    const type = (LLM_ENTITY_TYPES as readonly string[]).includes(rawType)
-      ? (rawType as LlmEntityType)
-      : 'concept';
+    const rawType = typeof parsed.type === 'string' ? parsed.type.toLowerCase().trim() : '';
+    if (!(LLM_ENTITY_TYPES as readonly string[]).includes(rawType)) continue;
+    const type = rawType as LlmEntityType;
+
+    const entityFrameKey = JSON.stringify([frameId, normalizeEntityName(name)]);
+    if (seenEntityFrames.has(entityFrameKey)) continue;
+    seenEntityFrames.add(entityFrameKey);
 
     const mentions = Number(parsed.mentions);
     entities.push({

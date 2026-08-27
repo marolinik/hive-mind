@@ -43,6 +43,44 @@ describe('KG entity↔frame bridge (contextual scoring signal)', () => {
     expect(count).toBe(1);
   });
 
+  it('strict linking reports whether a provenance edge was newly inserted', () => {
+    const f = frames.createIFrame(gop, 'strict provenance');
+    const e = kg.createEntity('org', 'Strict Acme', {});
+
+    expect(kg.linkEntityToFrameStrict(e.id, f.id)).toBe(true);
+    expect(kg.linkEntityToFrameStrict(e.id, f.id)).toBe(false);
+  });
+
+  it('rolls back an atomic graph write when strict provenance linking fails', () => {
+    const f = frames.createIFrame(gop, 'rollback provenance');
+    db.getDatabase().exec(`
+      CREATE TRIGGER reject_strict_bridge
+      BEFORE INSERT ON kg_entity_frames
+      BEGIN
+        SELECT RAISE(ABORT, 'blocked strict bridge');
+      END;
+    `);
+
+    expect(() => kg.runInTransaction(() => {
+      const e = kg.createEntity('org', 'Rollback Acme', {});
+      kg.linkEntityToFrameStrict(e.id, f.id);
+    })).toThrow(/blocked strict bridge/i);
+    expect(kg.findEntityByName('Rollback Acme')).toBeUndefined();
+  });
+
+  it('supports an atomic graph write nested inside an existing transaction', () => {
+    const f = frames.createIFrame(gop, 'nested provenance');
+
+    db.getDatabase().transaction(() => {
+      kg.runInTransaction(() => {
+        const e = kg.createEntity('org', 'Nested Acme', {});
+        expect(kg.linkEntityToFrameStrict(e.id, f.id)).toBe(true);
+      });
+    })();
+
+    expect(kg.findEntityByName('Nested Acme')).toBeDefined();
+  });
+
   it('findEntitiesInText seeds from entity names mentioned in a query', () => {
     const acme = kg.createEntity('org', 'Acme', {});
     kg.createEntity('tech', 'Postgres', {});
