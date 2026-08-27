@@ -409,6 +409,129 @@ describe('HybridSearch', () => {
     expect(ids).toContain(inA.id);
     expect(ids).not.toContain(inB.id);
   });
+  describe('strict fallback and deprecated-candidate boundaries', () => {
+    it('does not let single-token decoys crowd out an exact punctuated identifier', async () => {
+      const target = frames.createIFrame(
+        'gop-a',
+        'Captured roundtrip-debug-abc123 from hook event',
+      );
+
+      for (let index = 0; index < 25; index += 1) {
+        frames.createIFrame('gop-a', `Newer roundtrip decoy ${index}`);
+      }
+
+      const ids = await search.keywordSearch('roundtrip-debug-abc123', 10);
+      expect(ids).toContain(target.id);
+    });
+
+    it('prefers the punctuated identifier over concatenated-token decoys', async () => {
+      const target = frames.createIFrame('gop-a', 'Captured roundtrip-debug-abc123 from hook event');
+      for (let index = 0; index < 15; index += 1) {
+        frames.createIFrame('gop-a', `roundtripdebugabc123 decoy ${index}`);
+      }
+
+      const ids = await search.keywordSearch('roundtrip-debug-abc123', 10);
+      expect(ids).toContain(target.id);
+    });
+
+    it('does not broaden a malformed single-term identifier', async () => {
+      frames.createIFrame('gop-a', 'roundtrip unrelated decoy');
+      await expect(search.keywordSearch('roundtrip-"', 10)).resolves.toEqual([]);
+    });
+
+    it('preserves normalized CJK punctuation recall', async () => {
+      const target = frames.createIFrame('gop-a', '北京旅行 计划');
+      const ids = await search.keywordSearch('北京-旅行', 10);
+      expect(ids).toContain(target.id);
+    });
+
+    it('excludes deprecated keyword and vector candidates before lane limits', async () => {
+      const query = 'crowdout-token';
+      const indexed: Array<{ id: number; content: string }> = [];
+
+      for (let index = 0; index < 5; index += 1) {
+        const stale = frames.createIFrame('gop-a', `${query} obsolete-${index}`);
+        indexed.push({ id: stale.id, content: stale.content });
+        frames.update(stale.id, stale.content, 'deprecated');
+      }
+
+      const live = frames.createIFrame('gop-a', `${query} current-live-record`);
+      indexed.push({ id: live.id, content: live.content });
+      await search.indexFramesBatch(indexed);
+
+      await expect(search.keywordSearch(query, 1, undefined, true)).resolves.toEqual([live.id]);
+      await expect(search.vectorSearch(query, 1, undefined, true)).resolves.toEqual([live.id]);
+      const hybrid = await search.search(query, { limit: 1, excludeDeprecated: true });
+      expect(hybrid.map((result) => result.frame.id)).toEqual([live.id]);
+    });
+
+    it('excludes deprecated candidates before the LIKE fallback limit', async () => {
+      const live = frames.createIFrame('gop-a', '北京旅行 正常记录');
+      const stale = frames.createIFrame('gop-a', '北京旅行 旧记录');
+      const raw = db.getDatabase();
+      raw.prepare('UPDATE memory_frames SET created_at = ? WHERE id = ?')
+        .run('2026-01-01 00:00:00', live.id);
+      raw.prepare('UPDATE memory_frames SET created_at = ? WHERE id = ?')
+        .run('2026-02-01 00:00:00', stale.id);
+      frames.update(stale.id, stale.content, 'deprecated');
+
+      await expect(search.keywordSearch('北京旅行', 1, undefined, true)).resolves.toEqual([live.id]);
+    });
+
+    it('excludes deprecated chunk candidates before the KNN limit', async () => {
+      const previous = process.env.HIVE_MIND_CHUNK_RETRIEVAL;
+      process.env.HIVE_MIND_CHUNK_RETRIEVAL = '1';
+      try {
+        const staleFrames = Array.from({ length: 30 }, (_, index) =>
+          frames.createIFrame('gop-a', `chunk crowdout token obsolete ${index}`),
+        );
+        const live = frames.createIFrame('gop-a', 'chunk crowdout token current live record');
+        await search.indexFramesBatch([
+          ...staleFrames.map((frame) => ({ id: frame.id, content: frame.content })),
+          { id: live.id, content: live.content },
+        ]);
+        for (const stale of staleFrames) {
+          frames.update(stale.id, stale.content, 'deprecated');
+        }
+
+        const results = await search.search('chunk crowdout token', {
+          limit: 1,
+          gopId: 'gop-a',
+          excludeDeprecated: true,
+        });
+        expect(results.map((result) => result.frame.id)).toEqual([live.id]);
+      } finally {
+        if (previous === undefined) delete process.env.HIVE_MIND_CHUNK_RETRIEVAL;
+        else process.env.HIVE_MIND_CHUNK_RETRIEVAL = previous;
+      }
+    });
+
+    it('falls back to whole-frame vectors when filtered chunks have no eligible candidate', async () => {
+      const previous = process.env.HIVE_MIND_CHUNK_RETRIEVAL;
+      try {
+        process.env.HIVE_MIND_CHUNK_RETRIEVAL = '0';
+        const live = frames.createIFrame('gop-a', 'live whole-vector fallback record');
+        await search.indexFrame(live.id, live.content);
+
+        process.env.HIVE_MIND_CHUNK_RETRIEVAL = '1';
+        const stale = frames.createIFrame('gop-b', 'deprecated chunk-only decoy');
+        await search.indexFrame(stale.id, stale.content);
+        frames.update(stale.id, stale.content, 'deprecated');
+
+        await expect(search.vectorSearch('the', 1, 'gop-a', true)).resolves.toEqual([live.id]);
+        await expect(search.vectorSearchChunks('the', 1, 'gop-a', true)).resolves.toBeNull();
+        const results = await search.search('the', {
+          limit: 1,
+          gopId: 'gop-a',
+          excludeDeprecated: true,
+        });
+        expect(results.map((result) => result.frame.id)).toEqual([live.id]);
+      } finally {
+        if (previous === undefined) delete process.env.HIVE_MIND_CHUNK_RETRIEVAL;
+        else process.env.HIVE_MIND_CHUNK_RETRIEVAL = previous;
+      }
+    });
+  });
 });
 
 describe('assessRetrievalConfidence (abstain scaffold)', () => {

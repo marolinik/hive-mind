@@ -17,7 +17,7 @@ import type { Embedder } from './embeddings.js';
 import type { MemoryFrame, Importance } from './frames.js';
 import type { Reranker } from './inprocess-reranker.js';
 import { chunkText, type ChunkOptions } from './chunker.js';
-import { buildFtsOrQuery, hasUnsegmentedScript, sanitizeFtsToken } from './fts-sanitize.js';
+import { buildFtsOrQuery, FTS_STOP_WORDS, hasUnsegmentedScript } from './fts-sanitize.js';
 import { createCoreLogger } from '../logger.js';
 import {
   computeRelevance,
@@ -45,6 +45,8 @@ export interface SearchOptions {
   reranker?: Reranker;
   /** How many candidates to send to the reranker (default 30). */
   rerankPoolSize?: number;
+  /** Hard-exclude deprecated frames from every retrieval lane. Default OFF. */
+  excludeDeprecated?: boolean;
 }
 
 export interface SearchResult {
@@ -88,6 +90,7 @@ export function assessRetrievalConfidence(
 }
 
 const RRF_K = 60;
+const MAX_PUNCTUATED_FTS_TERMS = 16;
 
 const log = createCoreLogger('search');
 
@@ -116,6 +119,25 @@ function f32ToBlob(f32: Float32Array): Uint8Array {
  */
 function escapeLikeTerm(term: string): string {
   return term.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+/**
+ * Build a strict fallback MATCH expression from punctuation-delimited terms.
+ * Every surviving term is required; overlong expressions fail closed instead
+ * of truncating into a broader query.
+ */
+function buildPunctuatedFtsAndQuery(query: string, minimumTerms = 2): string {
+  const tokens = query.match(/[\p{L}\p{N}_]+/gu) ?? [];
+  const terms = tokens.filter((token) => (
+    token.length > 2
+    && !FTS_STOP_WORDS.has(token.toLowerCase())
+    && !hasUnsegmentedScript(token)
+  ));
+
+  if (terms.length < minimumTerms || terms.length > MAX_PUNCTUATED_FTS_TERMS) return '';
+  const uniqueTerms = [...new Set(terms)];
+  if (uniqueTerms.length < minimumTerms) return '';
+  return uniqueTerms.map((term) => `"${term}"`).join(' AND ');
 }
 
 export class HybridSearch {
@@ -179,11 +201,13 @@ export class HybridSearch {
     // unchanged. Flag off → chunkResults is null without touching the chunk
     // tables.
     const chunkResults = chunkRetrievalEnabled()
-      ? await this.vectorSearchChunks(query, laneFetch, gopId)
+      ? await this.vectorSearchChunks(query, laneFetch, gopId, options.excludeDeprecated)
       : null;
     const [keywordResults, vectorResults] = await Promise.all([
-      this.keywordSearch(query, laneFetch, gopId),
-      chunkResults !== null ? Promise.resolve(chunkResults) : this.vectorSearch(query, laneFetch, gopId),
+      this.keywordSearch(query, laneFetch, gopId, options.excludeDeprecated),
+      chunkResults !== null
+        ? Promise.resolve(chunkResults)
+        : this.vectorSearch(query, laneFetch, gopId, options.excludeDeprecated),
     ]);
 
     // RRF fusion.
@@ -231,10 +255,11 @@ export class HybridSearch {
 
     const whereExtra =
       temporalConditions.length > 0 ? ` AND ${temporalConditions.join(' AND ')}` : '';
+    const deprecatedExtra = options.excludeDeprecated ? " AND importance != 'deprecated'" : '';
 
     const frames = raw
       .prepare(
-        `SELECT * FROM memory_frames WHERE id IN (${placeholders})${whereExtra}`,
+        `SELECT * FROM memory_frames WHERE id IN (${placeholders})${whereExtra}${deprecatedExtra}`,
       )
       .all(...temporalParams) as MemoryFrame[];
 
@@ -313,7 +338,12 @@ export class HybridSearch {
     return results.slice(0, limit);
   }
 
-  async keywordSearch(query: string, limit: number, gopId?: string): Promise<number[]> {
+  async keywordSearch(
+    query: string,
+    limit: number,
+    gopId?: string,
+    excludeDeprecated = false,
+  ): Promise<number[]> {
     const raw = this.db.getDatabase();
 
     // Sanitize query for FTS5 with OR-based matching for better recall. Strips
@@ -332,7 +362,13 @@ export class HybridSearch {
       // unsegmented script (CJK) the emptiness is a sanitizer artifact, not a
       // lack of signal: unicode61 cannot token-match CJK prose, but LIKE
       // substring matching can, so route those to the fallback lane.
-      return hasUnsegmentedScript(query) ? this.likeFallbackSearch(query, limit, gopId) : [];
+      if (!hasUnsegmentedScript(query)) return [];
+      const literalIds = this.likeFallbackSearch(query, limit, gopId, excludeDeprecated);
+      if (literalIds.length > 0) return literalIds;
+      const normalized = query.replace(/[^\p{L}\p{N}_]+/gu, '');
+      return normalized && normalized !== query
+        ? this.likeFallbackSearch(normalized, limit, gopId, excludeDeprecated)
+        : [];
     }
 
     let sql: string;
@@ -342,11 +378,20 @@ export class HybridSearch {
       sql = `
         SELECT mf.id FROM memory_frames_fts fts
         JOIN memory_frames mf ON mf.id = fts.rowid
-        WHERE fts.content MATCH ? AND mf.gop_id = ?
-        ORDER BY rank
+        WHERE fts.content MATCH ? AND mf.gop_id = ?${excludeDeprecated ? " AND mf.importance != 'deprecated'" : ''}
+        ORDER BY fts.rank
         LIMIT ?
       `;
       params = [safeQuery, gopId, limit];
+    } else if (excludeDeprecated) {
+      sql = `
+        SELECT mf.id FROM memory_frames_fts fts
+        JOIN memory_frames mf ON mf.id = fts.rowid
+        WHERE fts.content MATCH ? AND mf.importance != 'deprecated'
+        ORDER BY fts.rank
+        LIMIT ?
+      `;
+      params = [safeQuery, limit];
     } else {
       sql = `
         SELECT rowid as id FROM memory_frames_fts
@@ -357,70 +402,114 @@ export class HybridSearch {
       params = [safeQuery, limit];
     }
 
+    const runMatch = (matchQuery: string): number[] => {
+      const rows = raw.prepare(sql).all(matchQuery, ...params.slice(1)) as { id: number }[];
+      return rows.map((row) => row.id);
+    };
+    const runPunctuationFallback = (): number[] => {
+      const literalIds = this.likeFallbackSearch(query, limit, gopId, excludeDeprecated);
+      if (literalIds.length > 0) return literalIds;
+
+      if (hasUnsegmentedScript(query)) {
+        const normalized = query.replace(/[^\p{L}\p{N}_]+/gu, '');
+        if (normalized && normalized !== query) {
+          const normalizedIds = this.likeFallbackSearch(
+            normalized,
+            limit,
+            gopId,
+            excludeDeprecated,
+          );
+          if (normalizedIds.length > 0) return normalizedIds;
+        }
+      }
+
+      const boundaryQuery = buildPunctuatedFtsAndQuery(query);
+      if (!boundaryQuery) return [];
+      try {
+        return runMatch(boundaryQuery);
+      } catch {
+        return [];
+      }
+    };
+
     try {
-      const rows = raw.prepare(sql).all(...params) as { id: number }[];
-      return rows.map((r) => r.id);
+      const ids = runMatch(safeQuery);
+      if (/[^\p{L}\p{N}_\s]/u.test(query)) {
+        return runPunctuationFallback();
+      }
+      return ids;
     } catch {
-      // FTS5 parse error (e.g. user query with FTS5-special chars that survived
-      // sanitization) — fall back to a LIKE keyword scan over the same column so
-      // we return best-effort matches instead of a false "no memory found".
-      // Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
-      return this.likeFallbackSearch(query, limit, gopId);
+      return runPunctuationFallback();
     }
   }
 
   /**
-   * LIKE-based keyword fallback over memory_frames.content. Used when the FTS5
-   * MATCH query throws a parse error (e.g. an unbalanced quote or other FTS5
-   * operator the user typed literally). The raw query is split into word tokens
-   * — stripping the punctuation that caused the FTS5 error, mirroring the
-   * primary sanitizer — and matched with OR-ed LIKE clauses for best-effort
-   * recall. Bound parameters only (the term is never interpolated) and LIKE
-   * metachars (`%`, `_`, `\`) are escaped with an ESCAPE clause so each token
-   * matches literally. If no usable token survives, a single literal LIKE over
-   * the whole escaped query is used.
-   * Forward-ported from waggle-os monorepo (mono-parity 2026-06-12).
+   * Whole-query LIKE fallback over memory_frames.content. Bound parameters and
+   * escaped LIKE metacharacters keep the query literal; Unicode case-insensitive
+   * punctuation fallback is handled separately by strict unicode61 FTS.
    */
-  private likeFallbackSearch(query: string, limit: number, gopId?: string): number[] {
+  private likeFallbackSearch(
+    query: string,
+    limit: number,
+    gopId?: string,
+    excludeDeprecated = false,
+  ): number[] {
     const raw = this.db.getDatabase();
-
-    const tokens = query
-      .split(/\s+/)
-      .map(sanitizeFtsToken) // strip punctuation (incl. FTS5 operators), Unicode-aware
-      .filter((w) => w.length > 0);
-    const terms = (tokens.length > 0 ? tokens : [query]).map((t) => `%${escapeLikeTerm(t)}%`);
-
-    const likeClause = terms.map(() => `content LIKE ? ESCAPE '\\'`).join(' OR ');
+    const term = `%${escapeLikeTerm(query)}%`;
+    const deprecatedFilter = excludeDeprecated ? " AND importance != 'deprecated'" : '';
 
     try {
       if (gopId) {
         const rows = raw
           .prepare(
-            `SELECT id FROM memory_frames
-             WHERE (${likeClause}) AND gop_id = ?
+          `SELECT id FROM memory_frames
+             WHERE content LIKE ? ESCAPE '\\' AND gop_id = ?${deprecatedFilter}
              ORDER BY created_at DESC LIMIT ?`,
           )
-          .all(...terms, gopId, limit) as { id: number }[];
+          .all(term, gopId, limit) as { id: number }[];
         return rows.map((r) => r.id);
       }
       const rows = raw
         .prepare(
-          `SELECT id FROM memory_frames
-           WHERE (${likeClause})
+        `SELECT id FROM memory_frames
+           WHERE content LIKE ? ESCAPE '\\'${deprecatedFilter}
            ORDER BY created_at DESC LIMIT ?`,
         )
-        .all(...terms, limit) as { id: number }[];
+        .all(term, limit) as { id: number }[];
       return rows.map((r) => r.id);
     } catch {
       return [];
     }
   }
 
-  async vectorSearch(query: string, limit: number, gopId?: string): Promise<number[]> {
+  async vectorSearch(
+    query: string,
+    limit: number,
+    gopId?: string,
+    excludeDeprecated = false,
+  ): Promise<number[]> {
     this.ensureFingerprint();
     const embedding = await this.embedder.embed(query);
     const blob = f32ToBlob(embedding);
     const raw = this.db.getDatabase();
+
+    if (excludeDeprecated) {
+      const gopFilter = gopId ? ' AND gop_id = ?' : '';
+      try {
+        const rows = raw.prepare(`
+          SELECT rowid id FROM memory_frames_vec
+          WHERE embedding MATCH ? AND k = ?
+            AND rowid IN (
+              SELECT id FROM memory_frames
+              WHERE importance != 'deprecated'${gopFilter}
+            )
+          ORDER BY distance
+        `).all(blob, limit, ...(gopId ? [gopId] : [])) as { id: number }[];
+        return rows.map((row) => row.id);
+      } catch {
+        return [];
+      }
+    }
 
     if (gopId) {
       try {
@@ -601,7 +690,12 @@ export class HybridSearch {
    * per-frame wins). When chunks_vec is empty, returns null so callers can
    * cleanly fall back to the whole-frame vectorSearch path.
    */
-  async vectorSearchChunks(query: string, limit: number, gopId?: string): Promise<number[] | null> {
+  async vectorSearchChunks(
+    query: string,
+    limit: number,
+    gopId?: string,
+    excludeDeprecated = false,
+  ): Promise<number[] | null> {
     this.ensureFingerprint();
     const raw = this.db.getDatabase();
     // Cheap probe — avoid embedding the query when chunks aren't populated.
@@ -622,17 +716,30 @@ export class HybridSearch {
     // Over-fetch chunks (limit * 5) so dedup-to-frame still leaves enough
     // candidates after collapsing multiple chunks of the same frame.
     try {
+      const gopFilter = gopId ? ' AND mf.gop_id = ?' : '';
+      const candidateFilter = excludeDeprecated
+        ? ` AND v.rowid IN (
+            SELECT c2.id
+            FROM memory_frame_chunks c2
+            JOIN memory_frames mf ON mf.id = c2.frame_id
+            WHERE mf.importance != 'deprecated'${gopFilter}
+          )`
+        : '';
       const chunkRows = raw
         .prepare(
           `SELECT v.rowid AS chunk_id, c.frame_id
              FROM memory_frame_chunks_vec v
              JOIN memory_frame_chunks c ON c.id = v.rowid
-            WHERE v.embedding MATCH ? AND k = ?
+             WHERE v.embedding MATCH ? AND k = ?${candidateFilter}
             ORDER BY distance`,
         )
-        .all(blob, Math.max(limit * 5, 25)) as Array<{ chunk_id: number; frame_id: number }>;
+        .all(
+          blob,
+          Math.max(limit * 5, 25),
+          ...(excludeDeprecated && gopId ? [gopId] : []),
+        ) as Array<{ chunk_id: number; frame_id: number }>;
 
-      if (chunkRows.length === 0) return [];
+      if (chunkRows.length === 0) return null;
 
       // Dedup by frame_id, preserving first-seen order (best-distance chunk).
       const seen = new Set<number>();
@@ -644,7 +751,7 @@ export class HybridSearch {
         if (frameIds.length >= limit) break;
       }
 
-      if (gopId) {
+      if (gopId && !excludeDeprecated) {
         const placeholders = frameIds.map(() => '?').join(',');
         const filtered = raw
           .prepare(
