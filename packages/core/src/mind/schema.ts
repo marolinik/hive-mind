@@ -10,7 +10,6 @@
 //   - evolution_runs     — GEPA / EvolveSchema run storage
 //   - improvement_signals — workflow-pattern + capability-gap detection
 //   - procedures         — optimized prompt templates
-//   - install_audit      — capability install trust trail
 //
 // Downstream consumers of this schema are free to add their own tables via
 // additive migrations. hive-mind uses `CREATE TABLE IF NOT EXISTS` throughout
