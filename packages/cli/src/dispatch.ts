@@ -35,6 +35,11 @@ function intArg(values: Record<string, unknown>, key: string): number | undefine
   return Number.isFinite(n) ? n : undefined;
 }
 
+function suppliedNumberArg(values: Record<string, unknown>, key: string): number | undefined {
+  const value = values[key];
+  return value === undefined ? undefined : Number(value);
+}
+
 function formatOf(values: Record<string, unknown>): OutputFormat {
   return values['json'] ? 'json' : 'plain';
 }
@@ -133,15 +138,15 @@ export async function dispatch(args: DispatchArgs): Promise<string | undefined> 
         throw new Error(`--executor must be 'cc' or 'api', got: ${executorArg}`);
       }
       const result = await runCognify({
-        since: intArg(values, 'since'),
-        limit: intArg(values, 'limit'),
+        since: suppliedNumberArg(values, 'since'),
+        limit: suppliedNumberArg(values, 'limit'),
         fullRescan: Boolean(values['full-rescan']),
         workspace: typeof values['workspace'] === 'string' ? values['workspace'] : undefined,
         allWorkspaces: Boolean(values['all-workspaces']),
         extractor: extractorArg as 'heuristic' | 'llm' | undefined,
         executor: executorArg as 'cc' | 'api' | undefined,
         llmModel: typeof values['llm-model'] === 'string' ? values['llm-model'] : undefined,
-        llmBatch: intArg(values, 'llm-batch'),
+        llmBatch: suppliedNumberArg(values, 'llm-batch'),
         env,
       });
       if (fmt === 'json') return json(result);

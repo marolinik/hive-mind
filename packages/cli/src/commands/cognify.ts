@@ -24,8 +24,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { openPersonalMind, resolveDataDir, type CliEnv } from '../setup.js';
 import {
+  evaluateExternalMemoryIngress,
   normalizeEntityName,
   isNoiseName,
+  LLM_ENTITY_TYPES,
   MindDB,
   KnowledgeGraph,
   extractEntitiesViaLLM,
@@ -180,6 +182,21 @@ interface OnMindOptions {
   llmBatch?: number;
 }
 
+function validateCognifyOptions(options: CognifyOptions): void {
+  if (options.since !== undefined &&
+      (!Number.isSafeInteger(options.since) || options.since < 0)) {
+    throw new RangeError('cognify since must be a nonnegative safe integer');
+  }
+  if (options.limit !== undefined &&
+      (!Number.isSafeInteger(options.limit) || options.limit <= 0)) {
+    throw new RangeError('cognify limit must be a positive safe integer');
+  }
+  if (options.llmBatch !== undefined &&
+      (!Number.isSafeInteger(options.llmBatch) || options.llmBatch <= 0)) {
+    throw new RangeError('cognify llmBatch must be a positive safe integer');
+  }
+}
+
 /**
  * Builds a Map<frame_id, Array<{name,type}>> from one bulk LLM call.
  * Heuristic path supplies its own per-frame extraction inline below.
@@ -235,67 +252,82 @@ async function runCognifyOnMind(
     'SELECT id, content FROM memory_frames WHERE id > ? ORDER BY id ASC LIMIT ?',
   ).all(since, limit) as { id: number; content: string }[];
 
-  let entitiesCreated = 0;
-  let entitiesUpdated = 0;
-  let lastFrameId = since;
-
   // LLM path: one bulk extraction up-front, then per-frame dedup/insert below.
   // Heuristic path: per-frame regex pass inside the loop.
   const llmIndex: Map<number, ExtractedEntity[]> | null =
     extractor === 'llm' ? await llmExtractForFrames(frames, options) : null;
 
-  for (const frame of frames) {
-    lastFrameId = Math.max(lastFrameId, frame.id);
+  const result = kg.runInTransaction(() => {
+    let entitiesCreated = 0;
+    let entitiesUpdated = 0;
+    let lastFrameId = since;
 
-    // Each candidate is { name, type } — heuristic returns 'concept' for all,
-    // LLM returns semantic types. The dedup/insert path is shared.
-    const candidates: Array<{ name: string; type: string }> = llmIndex
-      ? (llmIndex.get(frame.id) ?? []).map((e) => ({ name: e.name, type: e.type }))
-      : extractCandidateEntities(frame.content).map((name) => ({ name, type: 'concept' }));
+    for (const frame of frames) {
+      lastFrameId = Math.max(lastFrameId, frame.id);
 
-    // Source tag: distinguishes LLM-grade entities from heuristic noise so
-    // wiki cleanup can drop one set without affecting the other.
-    const sourceTag = extractor === 'llm' ? 'cognify-llm' : 'cognify';
+      // Each candidate is { name, type } — heuristic returns 'concept' for all,
+      // LLM returns semantic types. The dedup/insert path is shared.
+      const candidates: Array<{ name: string; type: string }> = llmIndex
+        ? (llmIndex.get(frame.id) ?? []).map((e) => ({ name: e.name, type: e.type }))
+        : extractCandidateEntities(frame.content).map((name) => ({ name, type: 'concept' }));
 
-    for (const cand of candidates) {
-      // Write-time noise filter at the create-entity seam: applies to BOTH the
-      // heuristic and LLM paths so low-signal names never enter the graph.
-      if (isNoiseName(cand.name)) continue;
-      const normalized = normalizeEntityName(cand.name);
-      if (normalized.length < 3) continue;
+      // Source tag: distinguishes LLM-grade entities from heuristic noise so
+      // wiki cleanup can drop one set without affecting the other.
+      const sourceTag = extractor === 'llm' ? 'cognify-llm' : 'cognify';
 
-      // Dedup by exact name match. Previously used searchEntities(name, 3)
-      // which is a LIKE '%name%' fuzzy search — once enough entities share
-      // a common prefix, the exact match drops out of top-3 and dedup
-      // silently fails. findEntityByName is the indexed exact-name lookup.
-      const existing = kg.findEntityByName(cand.name);
+      for (const cand of candidates) {
+        const name = typeof cand.name === 'string' ? cand.name.trim() : '';
+        if (isNoiseName(name)) continue;
+        if (normalizeEntityName(name).length < 3) continue;
+        if (!(LLM_ENTITY_TYPES as readonly string[]).includes(cand.type)) continue;
+        if (evaluateExternalMemoryIngress({ content: name }).action !== 'allow') continue;
 
-      if (existing) {
-        const existingProps = safeParse(existing.properties);
-        const seenCount = Number(existingProps.seen_count ?? 1) + 1;
-        kg.updateEntity(existing.id, {
-          properties: { ...existingProps, seen_count: seenCount },
-        });
-        kg.linkEntityToFrame(existing.id, frame.id);
-        entitiesUpdated++;
-      } else {
-        try {
-          const created = kg.createEntity(cand.type, cand.name, { seen_count: 1, source: sourceTag });
-          kg.linkEntityToFrame(created.id, frame.id);
+        const existing = kg.findEntityByName(name);
+
+        if (existing) {
+          if (!kg.linkEntityToFrameStrict(existing.id, frame.id)) continue;
+          const existingProps = safeParse(existing.properties);
+          const previousSeenCount = Number(existingProps.seen_count ?? 1);
+          const seenCount = (Number.isFinite(previousSeenCount) && previousSeenCount >= 0
+            ? previousSeenCount
+            : 1) + 1;
+          kg.updateEntity(existing.id, {
+            properties: { ...existingProps, seen_count: seenCount },
+          });
+          entitiesUpdated++;
+        } else {
+          let created: { id: number };
+          try {
+            created = kg.createEntity(cand.type, name, {
+              seen_count: 1,
+              source: sourceTag,
+            });
+          } catch (error) {
+            if (error instanceof Error && error.message.startsWith('Validation failed:')) {
+              continue;
+            }
+            throw error;
+          }
+          if (!kg.linkEntityToFrameStrict(created.id, frame.id)) {
+            throw new Error(`cognify failed to link entity ${created.id} to frame ${frame.id}`);
+          }
           entitiesCreated++;
-        } catch { /* validation may reject — skip */ }
+        }
       }
     }
+
+    return { framesScanned: frames.length, entitiesCreated, entitiesUpdated, lastFrameId };
+  });
+
+  if (usingWatermark && result.lastFrameId > since) {
+    writeWatermark(watermarkFile, result.lastFrameId);
   }
 
-  if (usingWatermark && lastFrameId > since) {
-    writeWatermark(watermarkFile, lastFrameId);
-  }
-
-  return { framesScanned: frames.length, entitiesCreated, entitiesUpdated, lastFrameId };
+  return result;
 }
 
 export async function runCognify(options: CognifyOptions = {}): Promise<CognifyResult> {
+  validateCognifyOptions(options);
   // 3b-1: Three modes. Pick exactly one. allWorkspaces wins if both are set.
   if (options.allWorkspaces) {
     return runCognifyAllWorkspaces(options);
@@ -451,5 +483,12 @@ async function runCognifyAllWorkspaces(options: CognifyOptions): Promise<Cognify
 
 function safeParse(raw: string | undefined | null): Record<string, unknown> {
   if (!raw) return {};
-  try { return JSON.parse(raw) as Record<string, unknown>; } catch { return {}; }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
 }
