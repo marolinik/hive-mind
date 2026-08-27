@@ -393,8 +393,9 @@ function replaceHiddenSeparators(value: string, replacement: string): string {
 
 function projectDelimitedWords(value: string): string | undefined {
   const projected = value.replace(
-    /(\p{L})[\p{P}\p{S}]+(?=\p{L})/gu,
-    '$1 ',
+    /(\p{L})([\p{P}\p{S}\p{White_Space}]+)(?=\p{L})/gu,
+    (match, letter: string, separators: string) =>
+      /[\p{P}\p{S}]/u.test(separators) ? `${letter} ` : match,
   );
   return projected === value ? undefined : projected;
 }
