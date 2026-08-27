@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync, existsSync } from 'node:fs';
@@ -82,6 +82,41 @@ describe('IdentityLayer', () => {
     });
     const unchanged = identity.update({});
     expect(unchanged.name).toBe('Hive');
+  });
+
+  it('update() ignores runtime keys outside the mutable column allowlist', () => {
+    const original = identity.create({
+      name: 'Hive',
+      role: 'Memory Agent',
+      department: '',
+      personality: '',
+      capabilities: '',
+      system_prompt: '',
+    });
+    const raw = db.getDatabase();
+    const prepare = vi.spyOn(raw, 'prepare');
+    const craftedKey = 'name = ?, id';
+    const runtimeChanges = Object.assign(Object.create(null), {
+      name: 'Guarded Hive',
+      id: 2,
+      created_at: '1970-01-01 00:00:00',
+      [craftedKey]: 'attacker-controlled',
+    });
+
+    const updated = identity.update(runtimeChanges as never);
+
+    expect(updated.id).toBe(1);
+    expect(updated.name).toBe('Guarded Hive');
+    expect(updated.created_at).toBe(original.created_at);
+
+    const updateStatements = prepare.mock.calls
+      .map(([sql]) => String(sql))
+      .filter((sql) => sql.includes('UPDATE identity SET'));
+    expect(updateStatements).toHaveLength(1);
+    expect(updateStatements[0]).toContain('name = ?');
+    expect(updateStatements[0]).not.toContain('id = ?');
+    expect(updateStatements[0]).not.toContain('created_at = ?');
+    expect(updateStatements[0]).not.toContain(craftedKey);
   });
 
   it('toContext() renders a label-prefixed block, skipping empty fields', () => {
