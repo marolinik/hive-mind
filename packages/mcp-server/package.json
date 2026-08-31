@@ -39,7 +39,7 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@hive-mind/core": "0.4.0",
     "@hive-mind/wiki-compiler": "0.4.0",
-    "zod": "^4.4.3"
+    "zod": "^4.5.1"
   },
   "publishConfig": {
     "access": "public"
