@@ -14,7 +14,7 @@
   "dependencies": {
     "@hive-mind/enrichment": "0.4.0",
     "express": "^5.2.1",
-    "marked": "^18.0.10",
+    "marked": "^18.0.11",
     "sanitize-html": "2.17.5"
   },
   "engines": {
