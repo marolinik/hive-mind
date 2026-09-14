@@ -58,12 +58,12 @@ jobs:
 
       - name: Select release mode
         id: mode
-        uses: changesets/action/select-mode@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
+        uses: changesets/action/select-mode@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
 
       - name: Pack publishable packages
         id: pack
         if: steps.mode.outputs.mode == 'publish'
-        uses: changesets/action/pack@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
+        uses: changesets/action/pack@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
           publish-plan-artifact-id: ${{ steps.mode.outputs.publish-plan-artifact-id }}
 
@@ -98,7 +98,7 @@ jobs:
 
       - name: Version packages
         id: version
-        uses: changesets/action/version@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
+        uses: changesets/action/version@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
           github-token: ${{ github.token }}
           script: npm run version-packages
@@ -143,7 +143,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Publish prepared artifacts
-        uses: changesets/action/publish@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
+        uses: changesets/action/publish@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
           github-token: ${{ github.token }}
           pack-dir-artifact-id: ${{ needs.prepare.outputs.pack-dir-artifact-id }}
